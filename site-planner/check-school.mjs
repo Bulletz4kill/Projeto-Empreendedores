@@ -69,4 +69,10 @@ r=await call('/api/accounts','POST',{role:'student',name:'Segundo aluno fictíci
 const secondStudent=await login('segundo.teste','account-test-only');
 r=await call('/api/school','GET',null,secondStudent);data=await r.json();assert.ok(!data.items.some(i=>i.kind==='grade'));
 const disposable=await create('grade',gradeValues);r=await call('/api/school/items/'+disposable,'DELETE',null,teacher);assert.equal(r.status,200);
-console.log('Passed: school features, grade validation/edit/delete, zero scores, linked family visibility and student/class isolation.');
+for(const cookie of ['',student,parent]){r=await call('/api/examples','POST',{},cookie);assert.equal(r.status,403);r=await call('/api/school/examples','POST',{},cookie);assert.equal(r.status,cookie?403:401);}
+r=await call('/api/school/examples','POST',{},teacher);assert.equal(r.status,201);const seeded=await r.json();assert.ok(seeded.inserted>20);
+r=await call('/api/school/examples','POST',{},teacher);assert.equal((await r.json()).inserted,0);
+r=await call('/api/school','GET',null,student);data=await r.json();assert.equal(data.items.find(i=>i.id===gradeId).payload.score,9);assert.equal(data.items.filter(i=>i.kind==='grade'&&i.payload.source).length,8);assert.ok(!data.items.some(i=>i.student_id&&i.student_id!==studentId&&i.kind!=='message'));
+r=await call('/api/school','GET',null,parent);data=await r.json();assert.equal(data.items.filter(i=>i.kind==='grade'&&i.payload.source).length,8);assert.equal(data.items.filter(i=>i.kind==='goal').length,0);
+const adminResponse=await call('/api/login','POST',{username:'preview-admin',password:'preview-password'});assert.equal(adminResponse.status,200);const adminCookie=adminResponse.headers.getSetCookie()[0].split(';')[0];r=await call('/api/examples','POST',{},adminCookie);assert.equal(r.status,201);assert.equal((await r.json()).teachers,2);
+console.log('Passed: school features, grade permissions and sample seeding with idempotency, existing-data preservation and family/student isolation.');

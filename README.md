@@ -41,3 +41,9 @@ Os testes cobrem aprovação, senha incorreta, isolamento de perfis, permissões
 O login escolar identifica o perfil pelo cadastro após validar a senha, mesmo quando outra aba está selecionada. Uma conta de aluno continua sem permissões de professor. Ao entrar, o cookie do outro tipo de sessão é encerrado. O formulário mantém a senha protegida em caso de erro para permitir a correção.
 
 Os painéis são renderizados diretamente no site, sem iframe. Professores publicam atividades e acompanham respostas; alunos organizam metas e concluem tarefas; responsáveis vinculados acompanham relatórios e respondem a autorizações. Mensagens privadas ficam restritas ao professor e ao destinatário. A logo vetorial está em site-planner/dist/brand-logo.svg.
+
+## Notas e exemplos
+
+A aba Notas calcula médias ponderadas e mostra a evolução cronológica por aluno, matéria e bimestre. O gráfico usa a data da avaliação ou, quando ausente, a data do lançamento. Execute `node site-planner/check-chart.mjs` para verificar ordenação, filtros e casos sem notas.
+
+Os dados de exemplo do gerador são inteiramente fictícios. Professores podem adicioná-los à própria turma pelo painel; repetir a carga não duplica registros existentes. Eles são identificados pelo título Exemplo e por um marcador no payload. A carga não substitui dados cadastrados, cria logins ou altera vínculos familiares. A demonstração na tela de acesso também usa esses exemplos.

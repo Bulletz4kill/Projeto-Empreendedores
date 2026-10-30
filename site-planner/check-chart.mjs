@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const context={window:{},Intl,Date,Map,Set};vm.runInNewContext(readFileSync(new URL('./dist/grade-chart.js',import.meta.url),'utf8'),context);
+const chart=context.window.ConectaGradeChart;
+const make=(id,student,subject,score,due,period='1')=>({id,student_id:student,kind:'grade',title:'Prova <script>',payload:{subject,score,period},due_at:due,created_at:'2026-10-25T00:00:00Z'});
+const items=[make('late','a','Matemática',9,'2026-10-20'),make('early','a','Matemática',0,'2026-09-01'),make('other-child','b','Matemática',5,'2026-10-01'),make('fallback','a','Português',7,null,'2')];
+const filter={student:'a',subject:'',period:''};
+assert.deepEqual(Array.from(chart.points(items,filter),i=>i.id),['early','late','fallback']);
+assert.deepEqual(Array.from(chart.points(items,{student:'a',subject:'matemática',period:'1'}),i=>i.payload.score),[0,9]);
+assert.equal(chart.points(items,{student:'a',subject:'',period:'4'}).length,0);
+const data={items,students:[{id:'a',name:'Aluno A'},{id:'b',name:'Aluno B'}]};
+const html=chart.render(data,filter);assert.ok(html.includes('<svg'));assert.equal((html.match(/<polyline/g)||[]).length,2);assert.ok(!html.includes('<script>'));assert.ok(html.includes('&lt;script&gt;'));assert.ok(html.includes('25/10/26'));
+const one=chart.render({...data,items:[items[0]]},{student:'a',subject:'',period:''});assert.ok(!one.includes('NaN'));assert.ok(one.includes('A primeira nota'));assert.equal(chart.render({...data,items:[]},filter),'');
+console.log('Passed: chronological graph, zero scores, fallback dates, per-student/subject/period filters, single/empty series and escaped content.');

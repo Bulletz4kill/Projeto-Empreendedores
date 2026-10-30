@@ -1,5 +1,6 @@
 import assets from './assets.mjs';
-import {schoolApi} from './school.mjs';
+import '../dist/examples.js';
+import {schoolApi,seedSchoolExamples} from './school.mjs';
 const encoder=new TextEncoder(), limits=new Map();
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',...headers}});
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');
@@ -43,6 +44,12 @@ const publicFields='id, name, login, role, status, created_at, approved_at';
 async function api(request,env,url){
   const path=url.pathname;
   if(request.method!=='GET'&&request.headers.get('Origin')!==url.origin)return json({error:'Origem inválida.'},403);
+  if(path==='/api/examples'&&request.method==='POST'){
+    if(!await isAdmin(request,env))return json({error:'Acesso restrito ao administrador.'},403);
+    const teachers=(await env.DB.prepare("SELECT id FROM accounts WHERE role = 'teacher' AND status = 'active'").all()).results;
+    let inserted=0,students=0;for(const teacher of teachers){const result=await seedSchoolExamples(env,teacher.id);inserted+=result.inserted;students+=result.students;}
+    return json({inserted,students,teachers:teachers.length},201);
+  }
   if(path==='/api/school'||path.startsWith('/api/school/')){
     const user=await accountSession(request,env);
     if(!user)return json({error:'Sua sessão expirou. Entre novamente.'},401);

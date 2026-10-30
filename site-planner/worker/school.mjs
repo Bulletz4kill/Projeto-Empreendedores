@@ -7,6 +7,13 @@ function gradePayload(values){
   return {subject,period,score,weight};
 }
 const schoolPublicAccount='id, name, login, role, created_by, last_seen_at';
+export async function seedSchoolExamples(env,teacherId){
+  const students=(await env.DB.prepare("SELECT id FROM accounts WHERE created_by = ? AND role = 'student' AND status = 'active'").bind(teacherId).all()).results;
+  const rows=await globalThis.ConectaExamples.items(teacherId,students);
+  let inserted=0;
+  for(const row of rows){const result=await env.DB.prepare('INSERT INTO school_items (id,kind,teacher_id,student_id,author_id,title,body,payload,due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(row.id,row.kind,row.teacher_id,row.student_id,row.author_id,row.title,row.body,JSON.stringify(row.payload),row.due_at,row.created_at,row.updated_at).run();inserted+=result.meta.changes||0;}
+  return {inserted,students:students.length};
+}
 async function schoolContext(env,user){
   const teacherId=user.role==='teacher'?user.id:user.created_by;
   if(!teacherId)return {teacherId:null,students:[],accounts:[],links:[]};
@@ -34,6 +41,10 @@ export async function schoolApi(request,env,url,user){
   const context=await schoolContext(env,user);
   if(!context.teacherId)return schoolJson({error:'Sua conta precisa estar vinculada a um professor.'},409);
   const path=url.pathname,now=new Date().toISOString();
+  if(path==='/api/school/examples'&&request.method==='POST'){
+    if(user.role!=='teacher')return schoolJson({error:'Somente o professor pode adicionar exemplos à turma.'},403);
+    return schoolJson(await seedSchoolExamples(env,user.id),201);
+  }
   if(path==='/api/school'&&request.method==='GET'){
     const teacher=await env.DB.prepare('SELECT id, name FROM accounts WHERE id = ?').bind(context.teacherId).first();
     const items=(await schoolRows(env,context.teacherId)).filter(item=>schoolVisible(item,user,context));

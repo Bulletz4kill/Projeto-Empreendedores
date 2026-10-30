@@ -2,6 +2,7 @@
   const root=document.querySelector('#school-app');
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let user=null,data=null,page='home',demo=false,requestVersion=0,editingGradeId=null;
+  let chartFilter={student:'',subject:'',period:''};
   const menus={teacher:[['home','Painel da turma'],['accounts','Alunos e acessos'],['evolution','Registrar evolução'],['reports','Relatório semanal'],['families','Participação das famílias'],['events','Agenda e encontros'],['authorizations','Autorizações'],['messages','Mensagens'],['publish','Publicar']],student:[['home','Meu planner'],['achievements','Minhas conquistas'],['tasks','Tarefas'],['notices','Avisos'],['events','Agenda'],['messages','Dúvidas com a professora']],parent:[['home','Semana do aluno'],['reports','Relatórios'],['help','Como ajudar em casa'],['events','Encontros e agenda'],['notices','Recados'],['authorizations','Autorizações'],['messages','Conversa']]};
   const titles={teacher:'Sua turma, mais conectada.',student:'Seu próximo passo começa aqui.',parent:'Mais perto de cada conquista.'};
   Object.values(menus).forEach(menu=>menu.splice(2,0,['grades','Notas']));
@@ -90,12 +91,13 @@
       const numeric=(label,name,min,max,step)=>`<div><label for="grade-${name}">${label}</label><input id="grade-${name}" name="${name}" type="number" min="${min}" max="${max}" step="${step}" required value="${esc(v[name]??'')}"></div>`;
       editor=card(editing?'Editar nota':'Lançar nota',data.students.length?`<form class="school-form" data-kind="grade" ${editing?'data-edit-id="'+editing.id+'"':''}>${options('Aluno','studentId',data.students.map(s=>[s.id,s.name]))}${field('Matéria','subject','text',true,v.subject||'')}${options('Bimestre','period',[1,2,3,4].map(n=>[n,n+'º bimestre']))}${field('Avaliação','title','text',true,v.title||'')}${numeric('Nota (0 a 10)','score',0,10,'0.1')}${numeric('Peso','weight','0.1',10,'0.1')}${field('Data da avaliação (opcional)','dueAt','date',false,v.dueAt||'')}<div><label for="grade-body">Comentário (opcional)</label><textarea id="grade-body" name="body" rows="3" maxlength="5000">${esc(v.body||'')}</textarea></div><div class="school-actions"><button class="school-button" type="submit">${editing?'Salvar alterações':'Publicar nota'}</button>${editing?button('Cancelar','grade-cancel','',true):''}</div></form>`:empty('Cadastre um aluno primeiro.','Abra Alunos e acessos para criar os acessos da sua turma.'));
     }
-    return card('Notas e médias',summary,'Média ponderada: soma das notas multiplicadas pelos pesos, dividida pela soma dos pesos. Escala de 0 a 10.')+`<div class="school-grid">${editor}${card('Avaliações',history)}</div>`;
+    return window.ConectaGradeChart.render(data,chartFilter)+card('Notas e médias',summary,'Média ponderada: soma das notas multiplicadas pelos pesos, dividida pela soma dos pesos. Escala de 0 a 10.')+`<div class="school-grid">${editor}${card('Avaliações',history)}</div>`;
   }
   function content(){if(page==='grades')return grades();if(page==='events')return window.ConectaCalendar.render(data,user);switch(page){case 'accounts':return accountPage();case 'families':return families();case 'publish':return publish();case 'evolution':return evolution();case 'reports':return reportPage();case 'tasks':return card('Tarefas de casa',tasks());case 'notices':return card(user.role==='parent'?'Recados da escola':'Avisos da turma',notices());case 'achievements':return card('Minhas conquistas',listing('observation','Seu progresso merece ser celebrado.','Os registros de esforço, participação e aprendizagem feitos pelo professor aparecerão aqui.'));case 'authorizations':return card('Autorizações',authorizations());case 'messages':return messages();case 'help':return `<div class="school-grid">${card('Como apoiar em casa','<p>Combine uma rotina de estudos e descanso. Pergunte como o aluno está se sentindo, acompanhe os prazos e reconheça o esforço, além dos resultados.</p><p>Quando surgir uma dificuldade, converse com o professor para combinar os próximos passos.</p>')}${card('Orientações do professor',reports())}</div>`;default:return home();}}
   function render(){
     const management=document.querySelector('#account-management');if(root.contains(management))root.before(management);management.hidden=!(user.role==='teacher'&&page==='accounts'&&!demo);
     root.innerHTML=`<div class="school"><div class="school-top"><div><h1>${esc(titles[user.role])}</h1><p>${esc(user.name)} · ${user.role==='teacher'?'Espaço do professor':user.role==='student'?'Espaço do aluno':'Espaço da família'}${data.teacher&&user.role!=='teacher'?' · Professor(a): '+esc(data.teacher.name):''}</p></div><span class="school-tag">${demo?'Demonstração':'● Conectado à sua turma'}</span></div><nav class="school-nav" aria-label="Seções do portal">${menus[user.role].map(([id,label])=>`<button type="button" data-action="page" data-page="${id}" ${page===id?'aria-current="page"':''}>${esc(label)}</button>`).join('')}<button type="button" data-action="refresh">↻ Atualizar</button></nav><p id="school-status" class="school-status" role="status" aria-live="polite"></p><div id="school-content">${content()}</div></div>`;
+    if(user.role==='teacher'&&page==='home'&&!demo)root.querySelector('#school-content').insertAdjacentHTML('beforeend',card('Explore com exemplos','<p>Adicione notas, tarefas, metas, agenda e registros fictícios aos alunos cadastrados. Os títulos começam com “Exemplo”. Repetir esta ação não duplica os exemplos existentes.</p>'+button('Adicionar exemplos à turma','seed-examples')));
     if(user.role==='teacher'&&page==='accounts'&&!demo){management.style.margin='0 0 20px';root.querySelector('#school-content').prepend(management);}
   }
   function notice(message,error=false){const node=root.querySelector('#school-status');if(node){node.textContent=message;node.classList.toggle('error',error);}}
@@ -126,11 +128,13 @@
     node.disabled=true;
     try{
       if(action==='remove')await request('/api/school/items/'+node.dataset.id,'DELETE');
+      if(action==='seed-examples'){const result=await request('/api/school/examples','POST',{});await refresh();notice(result.inserted?result.inserted+' registros fictícios adicionados. Todos têm o título Exemplo.':'Os exemplos já estão disponíveis para esta turma.');return;}
       if(action==='respond')await request('/api/school/items/'+node.dataset.id+'/response','POST',{status:node.dataset.status});
       await refresh();notice('Alteração salva.');
     }catch(error){notice(error.message,true);node.disabled=false;}
   });
   root.addEventListener('change',async event=>{
+    if(event.target.dataset.gradeFilter){chartFilter[event.target.dataset.gradeFilter]=event.target.value;render();root.querySelector('#chart-'+event.target.dataset.gradeFilter)?.focus();return;}
     const node=event.target;if(!node.dataset.task)return;
     node.disabled=true;
     try{await request('/api/school/items/'+node.dataset.task+'/response','POST',{status:node.checked?'done':'pending'});await refresh();notice('Progresso salvo.');}
@@ -152,8 +156,8 @@
   });
   window.ConectaSchool={
     async open(account,options={}){
-      user=account;demo=!!options.demo;data=null;page='home';editingGradeId=null;root.hidden=false;
-      if(demo){data={teacher:{id:'demo-teacher',name:'Professor de exemplo'},students:[],accounts:[],links:[],items:[],responses:[]};render();notice('Você está explorando uma demonstração. Entre com uma conta para usar a turma e salvar informações.');return;}
+      user=account;demo=!!options.demo;data=null;page='home';editingGradeId=null;chartFilter={student:'',subject:'',period:''};root.hidden=false;
+      if(demo){const teacher={id:user.role==='teacher'?user.id:'demo-teacher',name:'Professor de exemplo'},student={id:user.role==='student'?user.id:'demo-student',name:'Aluno de exemplo',role:'student'},parent={id:user.role==='parent'?user.id:'demo-parent',name:'Responsável de exemplo',role:'parent'};const items=await window.ConectaExamples.items(teacher.id,[student]);data={teacher,students:[student],accounts:user.role==='teacher'?[student,parent]:[],links:[{parent_id:parent.id,student_id:student.id}],items:items.filter(i=>user.role==='teacher'||(!['goal','reminder'].includes(i.kind)||i.author_id===user.id)&&!(i.kind==='authorization'&&user.role==='student')&&(i.kind!=='message'||i.author_id===user.id||i.student_id===user.id)),responses:[]};render();notice('Demonstração com dados fictícios. Entre com sua conta para salvar e compartilhar informações.');return;}
       root.innerHTML='<div class="school"><div class="school-loading" role="status">Carregando sua turma…</div></div>';await refresh();
     },
     close(){requestVersion++;user=null;data=null;const management=document.querySelector('#account-management');if(root.contains(management))root.before(management);root.replaceChildren();root.hidden=true;},

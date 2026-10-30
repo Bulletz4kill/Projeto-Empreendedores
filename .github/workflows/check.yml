@@ -16,3 +16,4 @@ jobs:
       - run: node site-planner/check-auth.mjs
       - run: node site-planner/check-accounts.mjs
       - run: node site-planner/check-school.mjs
+      - run: node site-planner/check-chart.mjs
