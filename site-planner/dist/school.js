@@ -1,9 +1,10 @@
 (()=>{
   const root=document.querySelector('#school-app');
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let user=null,data=null,page='home',demo=false,requestVersion=0;
+  let user=null,data=null,page='home',demo=false,requestVersion=0,editingGradeId=null;
   const menus={teacher:[['home','Painel da turma'],['accounts','Alunos e acessos'],['evolution','Registrar evolução'],['reports','Relatório semanal'],['families','Participação das famílias'],['events','Agenda e encontros'],['authorizations','Autorizações'],['messages','Mensagens'],['publish','Publicar']],student:[['home','Meu planner'],['achievements','Minhas conquistas'],['tasks','Tarefas'],['notices','Avisos'],['events','Agenda'],['messages','Dúvidas com a professora']],parent:[['home','Semana do aluno'],['reports','Relatórios'],['help','Como ajudar em casa'],['events','Encontros e agenda'],['notices','Recados'],['authorizations','Autorizações'],['messages','Conversa']]};
   const titles={teacher:'Sua turma, mais conectada.',student:'Seu próximo passo começa aqui.',parent:'Mais perto de cada conquista.'};
+  Object.values(menus).forEach(menu=>menu.splice(2,0,['grades','Notas']));
   const byKind=kind=>data.items.filter(item=>item.kind===kind);
   const nameOf=id=>id===user.id?user.name:id===data.teacher?.id?data.teacher.name:([...data.students,...data.accounts].find(a=>a.id===id)?.name||'Comunidade escolar');
   const statusOf=(item,accountId=user.id)=>data.responses.find(r=>r.item_id===item.id&&r.account_id===accountId)?.status;
@@ -76,7 +77,22 @@
     const compose=user.role==='teacher'?(data.accounts.length?select('Destinatário','studentId',data.accounts.map(a=>[a.id,a.name+' · '+(a.role==='student'?'Aluno':'Responsável')])):null):`<p class="school-help">Mensagem para ${esc(data.teacher?.name||'seu professor')}</p>`;
     return `<div class="school-grid">${card('Conversas',history)}${card('Enviar mensagem',compose===null?empty('Cadastre um acesso primeiro.','As contas da sua turma aparecerão como destinatárias.'):form('message',compose+area('Sua mensagem'),'Enviar mensagem'),'A conversa fica disponível somente ao professor e ao destinatário.')}</div>`;
   }
-  function content(){if(page==='events')return window.ConectaCalendar.render(data,user);switch(page){case 'accounts':return accountPage();case 'families':return families();case 'publish':return publish();case 'evolution':return evolution();case 'reports':return reportPage();case 'tasks':return card('Tarefas de casa',tasks());case 'notices':return card(user.role==='parent'?'Recados da escola':'Avisos da turma',notices());case 'achievements':return card('Minhas conquistas',listing('observation','Seu progresso merece ser celebrado.','Os registros de esforço, participação e aprendizagem feitos pelo professor aparecerão aqui.'));case 'authorizations':return card('Autorizações',authorizations());case 'messages':return messages();case 'help':return `<div class="school-grid">${card('Como apoiar em casa','<p>Combine uma rotina de estudos e descanso. Pergunte como o aluno está se sentindo, acompanhe os prazos e reconheça o esforço, além dos resultados.</p><p>Quando surgir uma dificuldade, converse com o professor para combinar os próximos passos.</p>')}${card('Orientações do professor',reports())}</div>`;default:return home();}}
+  function grades(){
+    const items=byKind('grade'),editing=items.find(i=>i.id===editingGradeId),v=editing?{...editing.payload,title:editing.title,body:editing.body,studentId:editing.student_id,dueAt:editing.due_at||''}:{weight:1,period:'1'};
+    const number=n=>Number(n).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+    const groups=new Map();
+    for(const item of items){const p=item.payload,key=JSON.stringify([item.student_id,p.subject.trim().toLocaleLowerCase('pt-BR'),p.period]);if(!groups.has(key))groups.set(key,{student:item.student_id,subject:p.subject,period:p.period,sum:0,weight:0,count:0});const g=groups.get(key);g.sum+=p.score*p.weight;g.weight+=p.weight;g.count++;}
+    const summary=groups.size?`<div class="grade-summary">${[...groups.values()].map(g=>`<article class="grade-average"><div><span class="school-meta">${esc(nameOf(g.student))} · ${esc(g.period)}º bimestre</span><h3>${esc(g.subject)}</h3><p>${g.count} avaliação(ões)</p></div><strong>${number(g.sum/g.weight)}<small>/10</small></strong></article>`).join('')}</div>`:empty('As notas aparecerão aqui.','As médias serão calculadas por aluno, matéria e bimestre.');
+    const history=items.length?items.map(item=>`<article class="school-item"><div class="school-item-head"><div><h3>${esc(item.title)}</h3><p>${esc(nameOf(item.student_id))} · ${esc(item.payload.subject)} · ${esc(item.payload.period)}º bimestre</p></div><span class="grade-score">${number(item.payload.score)}<small>/10</small></span></div><div class="school-meta">Peso ${esc(item.payload.weight)}${item.due_at?' · '+esc(date(item.due_at)):''}</div>${item.body?`<p>${esc(item.body)}</p>`:''}${user.role==='teacher'?`<div class="school-actions">${button('Editar','grade-edit',`data-id="${item.id}"`,true)}${button('Excluir','remove',`data-id="${item.id}"`,true)}</div>`:''}</article>`).join(''):empty('Nenhuma avaliação lançada.','Cada avaliação publicada ficará disponível ao aluno e aos responsáveis vinculados.');
+    let editor='';
+    if(user.role==='teacher'){
+      const options=(label,name,choices)=>`<div><label for="grade-${name}">${label}</label><select id="grade-${name}" name="${name}" required>${choices.map(([id,text])=>`<option value="${esc(id)}" ${String(v[name])===String(id)?'selected':''}>${esc(text)}</option>`).join('')}</select></div>`;
+      const numeric=(label,name,min,max,step)=>`<div><label for="grade-${name}">${label}</label><input id="grade-${name}" name="${name}" type="number" min="${min}" max="${max}" step="${step}" required value="${esc(v[name]??'')}"></div>`;
+      editor=card(editing?'Editar nota':'Lançar nota',data.students.length?`<form class="school-form" data-kind="grade" ${editing?'data-edit-id="'+editing.id+'"':''}>${options('Aluno','studentId',data.students.map(s=>[s.id,s.name]))}${field('Matéria','subject','text',true,v.subject||'')}${options('Bimestre','period',[1,2,3,4].map(n=>[n,n+'º bimestre']))}${field('Avaliação','title','text',true,v.title||'')}${numeric('Nota (0 a 10)','score',0,10,'0.1')}${numeric('Peso','weight','0.1',10,'0.1')}${field('Data da avaliação (opcional)','dueAt','date',false,v.dueAt||'')}<div><label for="grade-body">Comentário (opcional)</label><textarea id="grade-body" name="body" rows="3" maxlength="5000">${esc(v.body||'')}</textarea></div><div class="school-actions"><button class="school-button" type="submit">${editing?'Salvar alterações':'Publicar nota'}</button>${editing?button('Cancelar','grade-cancel','',true):''}</div></form>`:empty('Cadastre um aluno primeiro.','Abra Alunos e acessos para criar os acessos da sua turma.'));
+    }
+    return card('Notas e médias',summary,'Média ponderada: soma das notas multiplicadas pelos pesos, dividida pela soma dos pesos. Escala de 0 a 10.')+`<div class="school-grid">${editor}${card('Avaliações',history)}</div>`;
+  }
+  function content(){if(page==='grades')return grades();if(page==='events')return window.ConectaCalendar.render(data,user);switch(page){case 'accounts':return accountPage();case 'families':return families();case 'publish':return publish();case 'evolution':return evolution();case 'reports':return reportPage();case 'tasks':return card('Tarefas de casa',tasks());case 'notices':return card(user.role==='parent'?'Recados da escola':'Avisos da turma',notices());case 'achievements':return card('Minhas conquistas',listing('observation','Seu progresso merece ser celebrado.','Os registros de esforço, participação e aprendizagem feitos pelo professor aparecerão aqui.'));case 'authorizations':return card('Autorizações',authorizations());case 'messages':return messages();case 'help':return `<div class="school-grid">${card('Como apoiar em casa','<p>Combine uma rotina de estudos e descanso. Pergunte como o aluno está se sentindo, acompanhe os prazos e reconheça o esforço, além dos resultados.</p><p>Quando surgir uma dificuldade, converse com o professor para combinar os próximos passos.</p>')}${card('Orientações do professor',reports())}</div>`;default:return home();}}
   function render(){
     const management=document.querySelector('#account-management');if(root.contains(management))root.before(management);management.hidden=!(user.role==='teacher'&&page==='accounts'&&!demo);
     root.innerHTML=`<div class="school"><div class="school-top"><div><h1>${esc(titles[user.role])}</h1><p>${esc(user.name)} · ${user.role==='teacher'?'Espaço do professor':user.role==='student'?'Espaço do aluno':'Espaço da família'}${data.teacher&&user.role!=='teacher'?' · Professor(a): '+esc(data.teacher.name):''}</p></div><span class="school-tag">${demo?'Demonstração':'● Conectado à sua turma'}</span></div><nav class="school-nav" aria-label="Seções do portal">${menus[user.role].map(([id,label])=>`<button type="button" data-action="page" data-page="${id}" ${page===id?'aria-current="page"':''}>${esc(label)}</button>`).join('')}<button type="button" data-action="refresh">↻ Atualizar</button></nav><p id="school-status" class="school-status" role="status" aria-live="polite"></p><div id="school-content">${content()}</div></div>`;
@@ -98,6 +114,7 @@
     const node=event.target.closest('[data-action]');if(!node)return;
     const action=node.dataset.action;
     if(action.startsWith('cal-'))return;
+    if(action==='grade-edit'||action==='grade-cancel'){editingGradeId=action==='grade-edit'?node.dataset.id:null;render();root.querySelector('[data-kind="grade"] input')?.focus();return;}
     if(action==='page'){page=node.dataset.page;render();return;}
     if(action==='refresh'){await refresh();return;}
     if(action==='draft'){
@@ -125,7 +142,7 @@
     if(kind==='message')values.title='Conversa';
     if(!['publish','personal','link'].includes(kind))values.kind=kind;
     const submit=form.querySelector('[type=submit]');submit.disabled=true;notice('Salvando…');
-    try{await request(kind==='link'?'/api/school/links':'/api/school/items','POST',values);await refresh();notice(kind==='link'?'Responsável vinculado ao aluno.':'Salvo e compartilhado com os perfis autorizados.');}
+    try{await request(kind==='link'?'/api/school/links':'/api/school/items'+(form.dataset.editId?'/'+form.dataset.editId:''),form.dataset.editId?'PATCH':'POST',values);if(kind==='grade')editingGradeId=null;await refresh();notice(kind==='link'?'Responsável vinculado ao aluno.':'Salvo e compartilhado com os perfis autorizados.');}
     catch(error){notice(error.message,true);submit.disabled=false;}
   });
   window.ConectaCalendar.bind(root,{
@@ -135,7 +152,7 @@
   });
   window.ConectaSchool={
     async open(account,options={}){
-      user=account;demo=!!options.demo;data=null;page='home';root.hidden=false;
+      user=account;demo=!!options.demo;data=null;page='home';editingGradeId=null;root.hidden=false;
       if(demo){data={teacher:{id:'demo-teacher',name:'Professor de exemplo'},students:[],accounts:[],links:[],items:[],responses:[]};render();notice('Você está explorando uma demonstração. Entre com uma conta para usar a turma e salvar informações.');return;}
       root.innerHTML='<div class="school"><div class="school-loading" role="status">Carregando sua turma…</div></div>';await refresh();
     },

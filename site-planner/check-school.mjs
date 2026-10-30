@@ -51,4 +51,22 @@ r=await call('/api/school/items/'+event.id,'PATCH',{dueAt:'2026-11-21T14:00'},te
 r=await call('/api/school','GET',null,parent);data=await r.json();const moved=data.items.find(item=>item.id===event.id);assert.equal(moved.due_at,'2026-11-21T14:00');assert.equal(moved.payload.endAt,'2026-11-21T15:00');
 r=await call('/api/school/items/'+event.id,'PATCH',{dueAt:'2026-11-22T14:00'},student);assert.equal(r.status,403);
 for(const [path,type]of [['favicon.ico','image/x-icon'],['favicon-32.png','image/png'],['apple-touch-icon.png','image/png']]){r=await worker.fetch(new Request(origin+'/'+path+'?v=4'),env);assert.equal(r.status,200);assert.equal(r.headers.get('Content-Type'),type);const bytes=new Uint8Array(await r.arrayBuffer());assert.ok(bytes.length>100);assert.equal(bytes[0],path.endsWith('.ico')?0:137);}
-console.log('Passed: native school data, student tasks and goals, linked family reports, authorizations, private messages, cross-class isolation, and permissions.');
+const gradeValues={studentId,title:'Avaliação de matemática',body:'',subject:'Matemática',period:'1',score:'8',weight:'2'};
+const gradeId=await create('grade',gradeValues);
+await create('grade',{...gradeValues,title:'Atividade de revisão',score:6,weight:1});
+const zeroId=await create('grade',{...gradeValues,period:'2',score:0});
+for(const invalid of [{score:11},{score:-1},{score:''},{score:null},{score:'abc'},{weight:0},{weight:11},{subject:''},{period:'5'},{studentId:''}]){r=await call('/api/school/items','POST',{kind:'grade',...gradeValues,...invalid},teacher);assert.equal(r.status,400);}
+for(const cookie of [student,parent]){
+  r=await call('/api/school','GET',null,cookie);data=await r.json();assert.ok(data.items.some(i=>i.id===gradeId));assert.equal(data.items.find(i=>i.id===zeroId).payload.score,0);
+  r=await call('/api/school/items','POST',{kind:'grade',...gradeValues},cookie);assert.equal(r.status,403);
+  r=await call('/api/school/items/'+gradeId,'PATCH',gradeValues,cookie);assert.equal(r.status,403);
+  r=await call('/api/school/items/'+gradeId,'DELETE',null,cookie);assert.equal(r.status,403);
+}
+r=await call('/api/school/items/'+gradeId,'PATCH',{...gradeValues,score:9},teacher);assert.equal(r.status,200);
+r=await call('/api/school','GET',null,student);data=await r.json();assert.equal(data.items.find(i=>i.id===gradeId).payload.score,9);
+r=await call('/api/school/items/'+gradeId,'PATCH',gradeValues,other);assert.equal(r.status,403);
+r=await call('/api/accounts','POST',{role:'student',name:'Segundo aluno fictício',login:'segundo.teste',password:'account-test-only'},teacher);assert.equal(r.status,201);
+const secondStudent=await login('segundo.teste','account-test-only');
+r=await call('/api/school','GET',null,secondStudent);data=await r.json();assert.ok(!data.items.some(i=>i.kind==='grade'));
+const disposable=await create('grade',gradeValues);r=await call('/api/school/items/'+disposable,'DELETE',null,teacher);assert.equal(r.status,200);
+console.log('Passed: school features, grade validation/edit/delete, zero scores, linked family visibility and student/class isolation.');

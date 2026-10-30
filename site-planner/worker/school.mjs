@@ -1,6 +1,11 @@
 const schoolJson=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
-const schoolKinds=new Set(['task','notice','event','observation','report','authorization','message','goal','reminder']);
-const schoolTeacherKinds=new Set(['task','notice','event','observation','report','authorization','message']);
+const schoolKinds=new Set(['task','notice','event','observation','report','authorization','message','goal','reminder','grade']);
+const schoolTeacherKinds=new Set(['task','notice','event','observation','report','authorization','message','grade']);
+function gradePayload(values){
+  const subject=schoolClean(values.subject,80),period=String(values.period||''),score=Number(values.score),weight=Number(values.weight??1);
+  if(!subject||!['1','2','3','4'].includes(period)||values.score===null||values.score===undefined||String(values.score).trim()===''||!Number.isFinite(score)||score<0||score>10||!Number.isFinite(weight)||weight<=0||weight>10)return null;
+  return {subject,period,score,weight};
+}
 const schoolPublicAccount='id, name, login, role, created_by, last_seen_at';
 async function schoolContext(env,user){
   const teacherId=user.role==='teacher'?user.id:user.created_by;
@@ -47,7 +52,7 @@ export async function schoolApi(request,env,url,user){
     if(!schoolKinds.has(kind))return schoolJson({error:'Tipo de registro inválido.'},400);
     if(user.role==='teacher'?!schoolTeacherKinds.has(kind):user.role==='student'?!['goal','reminder','message'].includes(kind):kind!=='message')return schoolJson({error:'Seu perfil não pode criar esse registro.'},403);
     const title=schoolClean(data.title,180),body=schoolClean(data.body,5000);
-    if(!title||(!body&&!['goal','reminder'].includes(kind)))return schoolJson({error:'Preencha o título e a descrição.'},400);
+    if(!title||(!body&&!['goal','reminder','grade'].includes(kind)))return schoolJson({error:'Preencha o título e a descrição.'},400);
     let studentId=null;
     if(['goal','reminder'].includes(kind))studentId=user.id;
     else if(kind==='message'){
@@ -60,8 +65,9 @@ export async function schoolApi(request,env,url,user){
       if(!context.students.some(a=>a.id===data.studentId))return schoolJson({error:'Aluno não pertence à sua turma.'},403);
       studentId=data.studentId;
     }
-    if(['observation','report'].includes(kind)&&!studentId)return schoolJson({error:'Selecione um aluno.'},400);
+    if(['observation','report','grade'].includes(kind)&&!studentId)return schoolJson({error:'Selecione um aluno.'},400);
     const payload={};
+    if(kind==='grade'){const grade=gradePayload(data);if(!grade)return schoolJson({error:'Informe a matéria, o bimestre, uma nota de 0 a 10 e um peso maior que 0 e até 10.'},400);Object.assign(payload,grade);}
     if(kind==='task')payload.subject=schoolClean(data.subject,80)||'Geral';
     if(kind==='event')payload.format=schoolClean(data.format,60)||'Presencial';
     if(kind==='observation')payload.category=['Organização','Participação','Esforço','Convivência','Aprendizagem','Atenção'].includes(data.category)?data.category:'Participação';
@@ -85,6 +91,15 @@ export async function schoolApi(request,env,url,user){
   const deletePath=path.match(/^\/api\/school\/items\/([a-f0-9-]+)$/);
   if(deletePath&&request.method==='PATCH'){
     const row=await env.DB.prepare('SELECT * FROM school_items WHERE id = ? AND teacher_id = ?').bind(deletePath[1],context.teacherId).first();
+    if(row?.kind==='grade'){
+      if(user.role!=='teacher'||row.author_id!==user.id)return schoolJson({error:'Somente o professor responsável pode editar a nota.'},403);
+      const values=await schoolBody(request),payload=gradePayload(values),title=schoolClean(values.title,180),body=schoolClean(values.body,5000),due=schoolClean(values.dueAt,40);
+      if(!payload||!title)return schoolJson({error:'Preencha a avaliação, matéria, bimestre, nota de 0 a 10 e peso de até 10.'},400);
+      if(!context.students.some(a=>a.id===values.studentId))return schoolJson({error:'Selecione um aluno da sua turma.'},403);
+      if(due&&!/^\d{4}-\d{2}-\d{2}$/.test(due))return schoolJson({error:'Data inválida.'},400);
+      await env.DB.prepare('UPDATE school_items SET title=?,body=?,due_at=?,payload=?,student_id=?,updated_at=? WHERE id=? AND author_id=?').bind(title,body,due||null,JSON.stringify(payload),values.studentId,now,row.id,user.id).run();
+      return schoolJson({ok:true});
+    }
     if(user.role!=='teacher'||!row||row.author_id!==user.id||row.kind!=='event')return schoolJson({error:'Você só pode editar encontros publicados por você.'},403);
     const values=await schoolBody(request),due=schoolClean(values.dueAt,40),payload=JSON.parse(row.payload);
     if(!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(due))return schoolJson({error:'Informe a data e o horário do encontro.'},400);
