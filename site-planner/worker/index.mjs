@@ -7,6 +7,13 @@ const cookieOptions='HttpOnly; Secure; SameSite=Strict; Path=/';
 async function key(secret){return crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);}
 async function sign(value,secret){return crypto.subtle.sign('HMAC',await key(secret),encoder.encode(value));}
 async function issueCookie(name,id,env){const body=Date.now()+28800000+'.'+id+'.'+crypto.randomUUID();return `${name}=${body}.${hex(await sign(body,env.AUTH_SECRET))}; ${cookieOptions}; Max-Age=28800`;}
+async function loginResponse(user,name,id,env){
+  const response=json({user});
+  response.headers.append('Set-Cookie',await issueCookie(name,id,env));
+  const other=name==='planner_admin'?'planner_account':'planner_admin';
+  response.headers.append('Set-Cookie',`${other}=; ${cookieOptions}; Max-Age=0`);
+  return response;
+}
 async function sessionId(request,name,env){
   if(!env.AUTH_SECRET)return null;
   const cookie=request.headers.get('Cookie')?.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='))?.slice(name.length+1);
@@ -20,6 +27,7 @@ async function accountSession(request,env){const id=await sessionId(request,'pla
 async function passwordHash(password,salt){const material=await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);return hex(await crypto.subtle.deriveBits({name:'PBKDF2',salt:unhex(salt),iterations:100000,hash:'SHA-256'},material,256));}
 async function validPassword(password,account){const derived=await passwordHash(password,account.salt);const k=await key(account.salt);const signature=await crypto.subtle.sign('HMAC',k,encoder.encode(account.password_hash));return crypto.subtle.verify('HMAC',k,signature,encoder.encode(derived));}
 function throttle(request,action,max=8){const now=Date.now(),ip=request.headers.get('CF-Connecting-IP')||'local',id=action+':'+ip;for(const [k,v]of limits)if(v.until<now)limits.delete(k);const item=limits.get(id)||{count:0,until:now+300000};item.count++;limits.set(id,item);return item.count>max;}
+function clearThrottle(request,action){limits.delete(action+':'+(request.headers.get('CF-Connecting-IP')||'local'));}
 async function readBody(request){const text=await request.text();if(text.length>4096)throw new Error('invalid_body');try{const value=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value))throw new Error();return value;}catch{throw new Error('invalid_body');}}
 function cleanLogin(value){return typeof value==='string'?value.trim().toLowerCase():'';}
 function validFields(data){return typeof data.name==='string'&&data.name.trim().length>=2&&data.name.trim().length<=120&&/^[a-z0-9][a-z0-9@._+\-]{2,119}$/.test(cleanLogin(data.login))&&typeof data.password==='string'&&data.password.length>=8&&data.password.length<=128;}
@@ -47,7 +55,8 @@ async function api(request,env,url){
     if(typeof data.username!=='string'||typeof data.password!=='string'||data.username.length>120||data.password.length>256)return json({error:'Usuário ou senha incorretos.'},401);
     const expected=await sign(JSON.stringify([env.ADMIN_USERNAME||'hortiz',env.ADMIN_PASSWORD]),env.AUTH_SECRET);
     if(!await crypto.subtle.verify('HMAC',await key(env.AUTH_SECRET),expected,encoder.encode(JSON.stringify([data.username,data.password]))))return json({error:'Usuário ou senha incorretos.'},401);
-    return json({user:{role:'admin',name:'Administrador'}},200,{'Set-Cookie':await issueCookie('planner_admin','admin',env)});
+    clearThrottle(request,'admin');
+    return loginResponse({role:'admin',name:'Administrador'},'planner_admin','admin',env);
   }
   if(path==='/api/me'&&request.method==='GET'){
     if(await isAdmin(request,env))return json({user:{role:'admin',name:'Administrador'}});
@@ -63,14 +72,18 @@ async function api(request,env,url){
   }
   if(path==='/api/account-login'&&request.method==='POST'){
     if(!env.DB||!env.AUTH_SECRET)return json({error:'Autenticação indisponível.'},503);
-    if(throttle(request,'account-login'))return json({error:'Muitas tentativas. Aguarde cinco minutos.'},429);
-    const data=await readBody(request),role={prof:'teacher',pais:'parent',alunos:'student'}[data.profile];
-    if(!role||typeof data.password!=='string'||data.password.length>128)return json({error:'Usuário ou senha incorretos.'},401);
-    const account=await env.DB.prepare('SELECT * FROM accounts WHERE login = ? AND role = ?').bind(cleanLogin(data.username),role).first();
+    const data=await readBody(request),login=cleanLogin(data.username);
+    if(!login||login.length>120||typeof data.password!=='string'||!data.password.length||data.password.length>128)return json({error:'Informe seu usuário e sua senha.'},400);
+    if(throttle(request,'account-login-total',120))return json({error:'Muitas tentativas nesta conexão. Aguarde cinco minutos.'},429);
+    const action='account-login:'+login;
+    if(throttle(request,action))return json({error:'Muitas tentativas para este usuário. Aguarde cinco minutos e tente novamente.'},429);
+    // Logins are unique. Authenticate the account, then use its server-stored role.
+    const account=await env.DB.prepare('SELECT * FROM accounts WHERE login = ?').bind(login).first();
     if(!account){await passwordHash(data.password,'00000000000000000000000000000000');return json({error:'Usuário ou senha incorretos.'},401);}
     if(!await validPassword(data.password,account))return json({error:'Usuário ou senha incorretos.'},401);
     if(account.status!=='active')return json({error:'Seu cadastro aguarda aprovação do administrador.'},403);
-    return json({user:{id:account.id,name:account.name,role:account.role}},200,{'Set-Cookie':await issueCookie('planner_account',account.id,env)});
+    clearThrottle(request,action);
+    return loginResponse({id:account.id,name:account.name,role:account.role},'planner_account',account.id,env);
   }
   if(path==='/api/teachers'&&request.method==='GET'){
     if(!await isAdmin(request,env))return json({error:'Acesso restrito ao administrador.'},403);

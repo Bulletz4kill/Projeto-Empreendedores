@@ -99,12 +99,20 @@ $('#credentials').addEventListener('submit',async event=>{
   busy=true;button.disabled=true;status.textContent='Verificando acesso…';
   try{
     const result=await api(adminMode?'/api/login':'/api/account-login',{method:'POST',body:JSON.stringify({username:$('#email').value,password:$('#password').value,profile:selected})});
+    const actualProfile={teacher:'prof',parent:'pais',student:'alunos'}[result.user.role];
+    if(actualProfile)selected=actualProfile;
     event.target.reset();workspace(result.user);
     if(result.user.role==='admin')await loadAccounts();
     else{await loadPlanner();if(result.user.role==='teacher')await loadAccounts();}
-  }catch(error){status.textContent=error.message;$('#password').value='';}
+  }catch(error){
+    status.textContent=error.message;
+    $('#password').type='password';$('#toggle-password').textContent='Mostrar';
+    $('#toggle-password').setAttribute('aria-label','Mostrar senha');$('#toggle-password').setAttribute('aria-pressed','false');
+    $('#password').focus();$('#password').select();
+  }
   finally{busy=false;button.disabled=false;}
 });
+for(const selector of ['#email','#password'])$(selector).addEventListener('input',()=>{if(!busy)$('#form-status').textContent='';});
 $('#create-account').addEventListener('submit',async event=>{
   event.preventDefault();const button=event.target.querySelector('[type="submit"]');button.disabled=true;
   const name=$('#account-name').value,role=$('#account-role').value;

@@ -23,10 +23,24 @@ for(const [role,login,profile]of [['student','aluno.teste','alunos'],['parent','
   response=await call('/api/account-login','POST',{username:login,password:'account-test-only',profile});assert.equal(response.status,200);const childCookie=cookie(response);
   response=await call('/api/accounts','GET',null,childCookie);assert.equal(response.status,403);
   response=await call('/api/planner','GET',null,childCookie);assert.equal(response.status,200);const html=await response.text();assert.ok(html.includes('window.__plannerRole="'+profile+'"'));assert.ok(!html.includes('Storage Sandbox'));assert.ok(!html.includes('Penpal bridge initialization'));
-  response=await call('/api/account-login','POST',{username:login,password:'account-test-only',profile:'prof'});assert.equal(response.status,401);
+  response=await call('/api/account-login','POST',{username:login.toUpperCase(),password:'account-test-only',profile:'prof'});assert.equal(response.status,200);assert.equal((await response.json()).user.role,role);
+  assert.ok(response.headers.getSetCookie().some(value=>value.startsWith('planner_admin=;')));
+  const wrongTabCookie=cookie(response);
+  response=await call('/api/teachers','GET',null,wrongTabCookie);assert.equal(response.status,403);
 }
 response=await call('/api/accounts','GET',null,teacherCookie);assert.equal((await response.json()).accounts.length,2);
 response=await call('/api/teachers/'+stored.id+'/approve','POST',{},teacherCookie);assert.equal(response.status,403);
 response=await call('/api/planner');assert.equal(response.status,401);
 response=await call('/api/logout','POST',{},teacherCookie);assert.equal(response.headers.getSetCookie().length,2);
+// A successful login clears failures; shared school IPs do not lock other accounts.
+for(let i=0;i<10;i++){
+  response=await call('/api/account-login','POST',{username:'aluno.teste',password:'account-test-only',profile:'pais'},'','shared-school');assert.equal(response.status,200);
+}
+for(let i=0;i<8;i++){
+  response=await call('/api/account-login','POST',{username:'aluno.teste',password:'incorrect-password',profile:'alunos'},'','failure-test');assert.equal(response.status,401);
+}
+response=await call('/api/account-login','POST',{username:'aluno.teste',password:'account-test-only',profile:'alunos'},'','failure-test');assert.equal(response.status,429);
+response=await call('/api/account-login','POST',{username:'responsavel.teste',password:'account-test-only',profile:'prof'},'','failure-test');assert.equal(response.status,200);
+// Cross-role logins expire the other type of cookie to avoid stale admin sessions.
+response=await call('/api/login','POST',{username:env.ADMIN_USERNAME,password:env.ADMIN_PASSWORD});assert.ok(response.headers.getSetCookie().some(value=>value.startsWith('planner_account=;')));
 console.log('Passed: registration, duplicate email, password hashing, pending approval, admin approval, teacher login, student and parent accounts, role restrictions, planner loading, and logout.');

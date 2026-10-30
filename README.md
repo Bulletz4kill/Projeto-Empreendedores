@@ -36,3 +36,5 @@ O Worker final é gerado em `site-planner/dist/server/index.js`. O upload ao Git
 As senhas de novas contas usam PBKDF2 com salt individual. As sessões usam cookies assinados, HttpOnly, Secure e SameSite. O limite de tentativas fica na memória de cada instância; não é um bloqueio distribuído.
 
 Os testes cobrem aprovação, senha incorreta, isolamento de perfis, permissões de criação, ausência de hashes nas respostas, cookies alterados, logout e carregamento do planner. Nenhuma conta real é criada pelos testes. O conteúdo pedagógico e a sincronização entre famílias e turmas precisam ser conectados separadamente.
+
+O login escolar identifica o perfil pelo cadastro após validar a senha, mesmo quando outra aba está selecionada. Uma conta de aluno continua sem permissões de professor. Ao entrar, o cookie do outro tipo de sessão é encerrado. O formulário mantém a senha protegida em caso de erro para permitir a correção.
