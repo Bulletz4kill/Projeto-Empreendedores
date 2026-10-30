@@ -4,7 +4,7 @@ Portal escolar com cadastro de professores, aprovação pelo administrador e cri
 
 ## Cópia pública sem dados escolares
 
-Este repositório não contém o HTML original, seus nomes, registros escolares, notas, mensagens ou integrações da plataforma original. O planner incluído está vazio. O site hospedado e a cópia local completa são mantidos separadamente. Nenhuma senha real, chave de sessão ou credencial de publicação está incluída aqui.
+Este repositório não contém o HTML original, seus nomes, registros escolares, notas, mensagens ou integrações da plataforma original. O HTML legado é neutro; os painéis atuais estão incluídos no código e começam sem dados escolares cadastrados. O site hospedado e a cópia local completa são mantidos separadamente. Nenhuma senha real, chave de sessão ou credencial de publicação está incluída aqui.
 
 ## Executar e testar
 
@@ -15,6 +15,7 @@ node site-planner/prepare.cjs
 node site-planner/build-worker.cjs
 node site-planner/check-auth.mjs
 node site-planner/check-accounts.mjs
+node site-planner/check-school.mjs
 node site-planner/preview-worker.mjs
 ```
 
@@ -35,6 +36,8 @@ O Worker final é gerado em `site-planner/dist/server/index.js`. O upload ao Git
 
 As senhas de novas contas usam PBKDF2 com salt individual. As sessões usam cookies assinados, HttpOnly, Secure e SameSite. O limite de tentativas fica na memória de cada instância; não é um bloqueio distribuído.
 
-Os testes cobrem aprovação, senha incorreta, isolamento de perfis, permissões de criação, ausência de hashes nas respostas, cookies alterados, logout e carregamento do planner. Nenhuma conta real é criada pelos testes. O conteúdo pedagógico e a sincronização entre famílias e turmas precisam ser conectados separadamente.
+Os testes cobrem aprovação, senha incorreta, isolamento de perfis, permissões de criação, ausência de hashes nas respostas, cookies alterados, logout e carregamento do planner. Nenhuma conta real é criada pelos testes. Os painéis atuais usam o D1 para tarefas, avisos, agenda, evolução, relatórios, metas, mensagens, autorizações e vínculos entre responsáveis e alunos. Aplique todas as migrações da pasta drizzle em ordem.
 
 O login escolar identifica o perfil pelo cadastro após validar a senha, mesmo quando outra aba está selecionada. Uma conta de aluno continua sem permissões de professor. Ao entrar, o cookie do outro tipo de sessão é encerrado. O formulário mantém a senha protegida em caso de erro para permitir a correção.
+
+Os painéis são renderizados diretamente no site, sem iframe. Professores publicam atividades e acompanham respostas; alunos organizam metas e concluem tarefas; responsáveis vinculados acompanham relatórios e respondem a autorizações. Mensagens privadas ficam restritas ao professor e ao destinatário. A logo vetorial está em site-planner/dist/brand-logo.svg.

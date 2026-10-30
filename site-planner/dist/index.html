@@ -6,9 +6,14 @@
 <meta name="description" content="Conecta+: um espaço de conexão entre escola, famílias e alunos.">
 <title>Conecta+ | Acesso</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="school.css">
+<link rel="shortcut icon" href="favicon.ico?v=4" type="image/x-icon">
+<link rel="icon" href="favicon-32.png?v=4" type="image/png" sizes="32x32">
+<link rel="icon" href="brand-icon.svg?v=4" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
 </head>
 <body>
-<header class="header"><a class="brand" href="./" aria-label="Conecta+, início"><span class="logo" aria-hidden="true">✦</span><span><strong>Conecta+</strong><small>Escola, família e aluno. Mais perto.</small></span></a><span class="header-label">Portal da comunidade escolar</span></header>
+<header class="header"><a class="brand" href="./" aria-label="Conecta+, início"><img class="brand-wordmark" src="brand-logo.svg" alt="Conecta+ — Escola, família e aluno. Mais perto." width="272" height="67"></a><span class="header-label">Portal da comunidade escolar</span></header>
 <main id="login">
 <div class="intro"><span class="eyebrow">CADA CONQUISTA COMEÇA COM CONEXÃO</span><h1>Juntos, em cada etapa<br>da aprendizagem.</h1><p>Um espaço para acompanhar, organizar e celebrar a vida escolar.<br>Escolha seu perfil para acessar o planner.</p></div>
 <section class="access-panel" aria-label="Acesso ao portal">
@@ -53,7 +58,9 @@
 </form>
 <p id="management-status" role="status" aria-live="polite"></p><div id="account-list"></div>
 </section>
-<iframe id="planner" title="Conecta+ — planner do perfil selecionado"></iframe></section>
+<main id="school-app" hidden aria-label="Portal escolar"></main></section>
 <footer>Conecta+ <span>Conexões que ajudam a crescer.</span></footer>
+<script src="calendar.js"></script>
+<script src="school.js"></script>
 <script src="app.js"></script>
 </body></html>

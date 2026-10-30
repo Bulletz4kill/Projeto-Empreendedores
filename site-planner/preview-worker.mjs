@@ -2,6 +2,7 @@ import http from 'node:http';
 import worker from './worker/index.mjs';
 // Local test fixtures only. This module never uses or modifies the hosted database.
 import {env} from './check-accounts.mjs';
+import './check-school.mjs';
 http.createServer(async(req,res)=>{
   try{
     const chunks=[];for await(const chunk of req)chunks.push(chunk);

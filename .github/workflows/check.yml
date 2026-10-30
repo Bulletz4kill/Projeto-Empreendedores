@@ -15,3 +15,4 @@ jobs:
       - run: node --check site-planner/dist/app.js
       - run: node site-planner/check-auth.mjs
       - run: node site-planner/check-accounts.mjs
+      - run: node site-planner/check-school.mjs

@@ -1,4 +1,5 @@
 import assets from './assets.mjs';
+import {schoolApi} from './school.mjs';
 const encoder=new TextEncoder(), limits=new Map();
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',...headers}});
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');
@@ -23,7 +24,7 @@ async function sessionId(request,name,env){
   return await crypto.subtle.verify('HMAC',await key(env.AUTH_SECRET),unhex(parts[3]),encoder.encode(parts.slice(0,3).join('.')))?parts[1]:null;
 }
 async function isAdmin(request,env){return await sessionId(request,'planner_admin',env)==='admin';}
-async function accountSession(request,env){const id=await sessionId(request,'planner_account',env);if(!id||!env.DB)return null;return env.DB.prepare("SELECT id, name, login, role, status FROM accounts WHERE id = ? AND status = 'active'").bind(id).first();}
+async function accountSession(request,env){const id=await sessionId(request,'planner_account',env);if(!id||!env.DB)return null;return env.DB.prepare("SELECT id, name, login, role, status, created_by FROM accounts WHERE id = ? AND status = 'active'").bind(id).first();}
 async function passwordHash(password,salt){const material=await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);return hex(await crypto.subtle.deriveBits({name:'PBKDF2',salt:unhex(salt),iterations:100000,hash:'SHA-256'},material,256));}
 async function validPassword(password,account){const derived=await passwordHash(password,account.salt);const k=await key(account.salt);const signature=await crypto.subtle.sign('HMAC',k,encoder.encode(account.password_hash));return crypto.subtle.verify('HMAC',k,signature,encoder.encode(derived));}
 function throttle(request,action,max=8){const now=Date.now(),ip=request.headers.get('CF-Connecting-IP')||'local',id=action+':'+ip;for(const [k,v]of limits)if(v.until<now)limits.delete(k);const item=limits.get(id)||{count:0,until:now+300000};item.count++;limits.set(id,item);return item.count>max;}
@@ -42,6 +43,11 @@ const publicFields='id, name, login, role, status, created_at, approved_at';
 async function api(request,env,url){
   const path=url.pathname;
   if(request.method!=='GET'&&request.headers.get('Origin')!==url.origin)return json({error:'Origem inválida.'},403);
+  if(path==='/api/school'||path.startsWith('/api/school/')){
+    const user=await accountSession(request,env);
+    if(!user)return json({error:'Sua sessão expirou. Entre novamente.'},401);
+    return schoolApi(request,env,url,user);
+  }
   if(path==='/api/logout'&&request.method==='POST'){
     const response=json({ok:true});
     response.headers.append('Set-Cookie',`planner_admin=; ${cookieOptions}; Max-Age=0`);
@@ -82,6 +88,7 @@ async function api(request,env,url){
     if(!account){await passwordHash(data.password,'00000000000000000000000000000000');return json({error:'Usuário ou senha incorretos.'},401);}
     if(!await validPassword(data.password,account))return json({error:'Usuário ou senha incorretos.'},401);
     if(account.status!=='active')return json({error:'Seu cadastro aguarda aprovação do administrador.'},403);
+    await env.DB.prepare('UPDATE accounts SET last_seen_at = ? WHERE id = ?').bind(new Date().toISOString(),account.id).run();
     clearThrottle(request,action);
     return loginResponse({id:account.id,name:account.name,role:account.role},'planner_account',account.id,env);
   }
@@ -136,6 +143,7 @@ export default {
     }
     if(pathname==='/')pathname='/index.html';
     const asset=assets[pathname];if(!asset)return new Response('Página não encontrada',{status:404});
-    return new Response(request.method==='HEAD'?null:asset.body,{headers:{'Content-Type':asset.type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'SAMEORIGIN'}});
+    const body=asset.base64?Uint8Array.from(atob(asset.body),c=>c.charCodeAt(0)):asset.body;
+    return new Response(request.method==='HEAD'?null:body,{headers:{'Content-Type':asset.type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'SAMEORIGIN'}});
   }
 };
