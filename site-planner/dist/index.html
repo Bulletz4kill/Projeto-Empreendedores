@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Conecta+: um espaço de conexão entre escola, famílias e alunos.">
+<title>Conecta+ | Acesso</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="header"><a class="brand" href="./" aria-label="Conecta+, início"><span class="logo" aria-hidden="true">✦</span><span><strong>Conecta+</strong><small>Escola, família e aluno. Mais perto.</small></span></a><span class="header-label">Portal da comunidade escolar</span></header>
+<main id="login">
+<div class="intro"><span class="eyebrow">CADA CONQUISTA COMEÇA COM CONEXÃO</span><h1>Juntos, em cada etapa<br>da aprendizagem.</h1><p>Um espaço para acompanhar, organizar e celebrar a vida escolar.<br>Escolha seu perfil para acessar o planner.</p></div>
+<section class="access-panel" aria-label="Acesso ao portal">
+<div class="profiles" role="tablist" aria-label="Escolha seu perfil">
+<button id="tab-prof" class="profile" role="tab" aria-selected="true" aria-controls="access-form" data-role="prof"><span class="profile-title"><span aria-hidden="true">▣</span> Espaço da professora</span><span class="profile-description">Acesso restrito: Equipe pedagógica</span></button>
+<button id="tab-pais" class="profile" role="tab" aria-selected="false" aria-controls="access-form" data-role="pais" tabindex="-1"><span class="profile-title"><span aria-hidden="true">▣</span> Espaço dos pais</span><span class="profile-description">Acesso restrito: Professores e responsáveis</span></button>
+<button id="tab-alunos" class="profile" role="tab" aria-selected="false" aria-controls="access-form" data-role="alunos" tabindex="-1"><span class="profile-title"><span aria-hidden="true">▣</span> Espaço dos alunos</span><span class="profile-description">Acesso restrito: Professores e alunos</span></button>
+</div>
+<div class="form-area" id="access-form" role="tabpanel" aria-labelledby="tab-prof">
+<div class="form-heading"><span class="round-icon" aria-hidden="true">↗</span><div><h2 id="form-title">Boas-vindas, professora!</h2><p id="form-description">Acompanhe sua turma e aproxime as famílias.</p></div></div>
+<form id="credentials">
+<label for="email">E-mail ou usuário</label><input id="email" name="email" type="text" placeholder="Seu e-mail ou usuário" autocomplete="username" required>
+<label for="password">Senha</label><div class="password-wrap"><input id="password" name="password" type="password" placeholder="Digite sua senha" autocomplete="current-password" required><button id="toggle-password" type="button" aria-label="Mostrar senha" aria-pressed="false">Mostrar</button></div>
+<p class="account-help">Os acessos serão fornecidos pela escola.</p>
+<button class="primary" type="submit">Entrar <span aria-hidden="true">→</span></button>
+<p id="form-status" role="status" aria-live="polite"></p>
+</form>
+<p class="create-access"><button id="create-teacher" type="button">Criar acesso de professor</button></p>
+<form id="teacher-registration" hidden>
+<label for="teacher-name">Nome completo</label><input id="teacher-name" name="name" autocomplete="name" maxlength="120" required>
+<label for="teacher-email">E-mail do professor</label><input id="teacher-email" name="email" type="email" autocomplete="email" maxlength="120" required>
+<label for="teacher-password">Crie uma senha</label><input id="teacher-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required aria-describedby="registration-help">
+<label for="teacher-confirm">Confirme a senha</label><input id="teacher-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+<p id="registration-help" class="account-help">Use pelo menos 8 caracteres. Seu cadastro será liberado após aprovação do administrador.</p>
+<button class="primary" type="submit">Criar acesso de professor <span aria-hidden="true">→</span></button>
+<p id="registration-status" role="status" aria-live="polite"></p>
+<button id="registration-back" class="text-button" type="button">← Voltar para entrar</button>
+</form>
+<div class="demo"><span class="demo-label">VERSÃO DE DEMONSTRAÇÃO</span><p>Explore o perfil selecionado com dados de exemplo.</p><button id="demo-enter" type="button">Conhecer o espaço da professora <span aria-hidden="true">→</span></button></div>
+</div>
+</section>
+<p class="admin-access"><button id="admin-access" type="button">Acesso administrativo</button></p>
+<p class="footer-note"><span aria-hidden="true">♡</span> Aprender é um caminho que fazemos juntos.</p>
+</main>
+<section id="workspace" hidden aria-label="Planner"><nav class="workspace-bar"><span id="workspace-title">Espaço da professora</span><button id="logout" type="button">← Voltar aos acessos</button></nav>
+<section id="account-management" class="management" hidden>
+<div class="management-heading"><div><h2 id="management-title">Acessos da turma</h2><p id="management-description">Crie os acessos de alunos e responsáveis.</p></div><button id="refresh-accounts" class="text-button" type="button">Atualizar lista</button></div>
+<form id="create-account" hidden>
+<div class="account-grid"><div><label for="account-role">Tipo de acesso</label><select id="account-role" required><option value="student">Aluno</option><option value="parent">Pai, mãe ou responsável</option></select></div><div><label for="account-name">Nome completo</label><input id="account-name" maxlength="120" autocomplete="off" required></div><div><label for="account-login">Usuário ou e-mail</label><input id="account-login" maxlength="120" autocomplete="off" required aria-describedby="account-help"></div><div><label for="account-password">Senha inicial</label><input id="account-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></div></div>
+<p class="account-help" id="account-help">Usuário sem espaços e senha com pelo menos 8 caracteres. Compartilhe as credenciais diretamente com o aluno ou responsável.</p>
+<button class="primary" type="submit">Criar acesso <span aria-hidden="true">+</span></button>
+</form>
+<p id="management-status" role="status" aria-live="polite"></p><div id="account-list"></div>
+</section>
+<iframe id="planner" title="Conecta+ — planner do perfil selecionado"></iframe></section>
+<footer>Conecta+ <span>Conexões que ajudam a crescer.</span></footer>
+<script src="app.js"></script>
+</body></html>

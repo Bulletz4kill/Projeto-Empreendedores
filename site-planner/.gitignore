@@ -1,0 +1,5 @@
+outputs/
+worker/assets.mjs
+dist/server/
+dist/.openai/
+.env*

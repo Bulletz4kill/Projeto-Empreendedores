@@ -1,43 +1,38 @@
-# Projeto Empreendedores — Planner Escolar
+# Conecta+ — Projeto Empreendedores
 
-Portal escolar com três espaços: professora, pais e alunos. Inclui tela de entrada, demonstração do planner e acesso administrativo validado no servidor.
+Portal escolar com cadastro de professores, aprovação pelo administrador e criação de acessos de alunos e responsáveis pelos professores.
 
-Site: https://planner-escolar-conexoes-leona.movisssss.chatgpt.site
+## Cópia pública sem dados escolares
 
-## Estrutura
+Este repositório não contém o HTML original, seus nomes, registros escolares, notas, mensagens ou integrações da plataforma original. O planner incluído está vazio. O site hospedado e a cópia local completa são mantidos separadamente. Nenhuma senha real, chave de sessão ou credencial de publicação está incluída aqui.
 
-- `Planner Escolar (versão independente).html`: artefato original, preservado na raiz (o nome do arquivo pode usar acentuação Unicode decomposta).
-- `site-planner/dist/`: interface e cópia adaptada do planner.
-- `site-planner/worker/index.mjs`: servidor, login administrativo e sessão por cookie.
-- `site-planner/prepare.cjs`: gera a cópia adaptada a partir do HTML original.
-- `site-planner/build-worker.cjs`: incorpora os arquivos no Worker de hospedagem.
-- `site-planner/check-auth.mjs`: testes da autenticação usando credenciais fictícias.
-- `site-planner/login-preview.png`: imagem da tela de entrada.
+## Executar e testar
 
-## Preparar e verificar
-
-Requer Node.js 22 ou superior. Não há dependências para instalar.
+Requer Node.js 22.13 ou superior, sem instalar dependências.
 
 ```sh
 node site-planner/prepare.cjs
 node site-planner/build-worker.cjs
 node site-planner/check-auth.mjs
+node site-planner/check-accounts.mjs
+node site-planner/preview-worker.mjs
 ```
 
-Para visualizar somente a interface estática:
+A prévia completa abre em http://127.0.0.1:4174, usa banco em memória e contas explicitamente fictícias dos testes. Não altera a hospedagem. A prévia estática opcional usa `node site-planner/preview.cjs` e a porta 4173.
 
-```sh
-node site-planner/preview.cjs
-```
+## Configuração do servidor
 
-Abra http://127.0.0.1:4173. Essa prévia estática não executa as rotas de autenticação; elas são atendidas pelo Worker em hospedagem.
+Defina `ADMIN_USERNAME`, `ADMIN_PASSWORD` e `AUTH_SECRET` no ambiente. Senha e chave de sessão devem ser configuradas como segredos; não as grave no Git. Use um binding D1 chamado `DB` e aplique `site-planner/drizzle/0000_accounts.sql`. A configuração de Sites está em `site-planner/.openai/hosting.json`; para uma hospedagem própria, substitua a identidade do projeto pela sua.
 
-## Autenticação e hospedagem
+O Worker final é gerado em `site-planner/dist/server/index.js`. O upload ao GitHub não publica automaticamente o site.
 
-Configure `ADMIN_USERNAME`, `ADMIN_PASSWORD` e `AUTH_SECRET` no ambiente do servidor. A senha e a chave de sessão devem ser segredos. Nenhum valor real de senha ou chave é incluído neste repositório.
+## Fluxo de acesso
 
-O build gera `site-planner/dist/server/index.js`, um módulo Worker com `fetch(request, env)`. A configuração de Sites está em `site-planner/.openai/hosting.json`. O envio ao GitHub não publica automaticamente o site.
+1. O professor se cadastra com nome, e-mail e senha.
+2. O administrador aprova o cadastro no painel administrativo.
+3. O professor cria usuários e senhas para alunos e responsáveis.
+4. Cada conta entra no perfil correspondente. Professores veem apenas os acessos que criaram.
 
-O site atual é privado na plataforma de hospedagem: primeiro há o acesso pelo ChatGPT e depois o acesso administrativo do portal. Os três perfis escolares ainda usam dados de demonstração, com armazenamento no navegador, sem sincronização entre usuários ou dispositivos. O administrador acessa a interface existente da professora; uma área de gestão de contas ainda não foi implementada.
+As senhas de novas contas usam PBKDF2 com salt individual. As sessões usam cookies assinados, HttpOnly, Secure e SameSite. O limite de tentativas fica na memória de cada instância; não é um bloqueio distribuído.
 
-Os testes cobrem senha correta e incorreta, proteção da rota administrativa, cookie alterado, origem de requisição, limite de tentativas e saída. O limite de tentativas reside na memória da instância e não é um bloqueio global distribuído.
+Os testes cobrem aprovação, senha incorreta, isolamento de perfis, permissões de criação, ausência de hashes nas respostas, cookies alterados, logout e carregamento do planner. Nenhuma conta real é criada pelos testes. O conteúdo pedagógico e a sincronização entre famílias e turmas precisam ser conectados separadamente.

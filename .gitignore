@@ -1,0 +1,20 @@
+# Segredos e configurações locais
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+**/.dev.vars
+**/.dev.vars.*
+*.pem
+*.key
+
+# Artefatos de publicação e arquivos gerados
+*.tar.gz
+**/outputs/
+site-planner/worker/assets.mjs
+site-planner/dist/server/
+site-planner/dist/.openai/
+node_modules/
+*.log
