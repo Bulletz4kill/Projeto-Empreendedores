@@ -1,0 +1,9 @@
+import assert from 'node:assert/strict';
+import {testDatabase} from './testing/d1.mjs';
+import {migrateLegacy} from './worker/institutions.mjs';
+const DB=testDatabase(),now=new Date().toISOString(),teacher=crypto.randomUUID(),student=crypto.randomUUID(),parent=crypto.randomUUID(),item=crypto.randomUUID();
+for(const [id,role,owner]of [[teacher,'teacher',null],[student,'student',teacher],[parent,'parent',teacher]])DB.raw.prepare('INSERT INTO accounts(id,name,login,password_hash,salt,role,status,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(id,'Nome fictício',id,'hash-preservado','salt-preservado',role,'active',owner,now);
+DB.raw.prepare('INSERT INTO school_items(id,kind,teacher_id,student_id,author_id,title,body,payload,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(item,'grade',teacher,student,teacher,'Nota existente','',JSON.stringify({subject:'Matemática',period:'4',score:8,weight:1}),now,now);
+DB.raw.prepare('INSERT INTO school_links(parent_id,student_id,teacher_id) VALUES(?,?,?)').run(parent,student,teacher);
+assert.equal((await migrateLegacy({DB})).migrated,1);assert.equal((await migrateLegacy({DB})).migrated,0);assert.equal(DB.raw.prepare('SELECT password_hash FROM accounts WHERE id=?').get(student).password_hash,'hash-preservado');assert.equal(DB.raw.prepare('SELECT institution_id FROM accounts WHERE id=?').get(parent).institution_id,teacher);assert.equal(DB.raw.prepare('SELECT class_id FROM school_items WHERE id=?').get(item).class_id,teacher);assert.equal(JSON.parse(DB.raw.prepare('SELECT payload FROM school_items WHERE id=?').get(item).payload).score,8);assert.equal(DB.raw.prepare('SELECT count(*) AS n FROM school_links').get().n,1);
+console.log('Passed: non-destructive legacy migration, existing passwords, grades, family links and idempotency.');

@@ -1,78 +1,37 @@
 import assert from 'node:assert/strict';
-import worker from './worker/index.mjs';
-import {env} from './check-accounts.mjs';
-const origin='http://127.0.0.1:4174';
-async function call(path,method='GET',body=null,cookie=''){
-  return worker.fetch(new Request(origin+path,{method,headers:{Origin:origin,'Content-Type':'application/json',Cookie:cookie,'CF-Connecting-IP':crypto.randomUUID()},...(body?{body:JSON.stringify(body)}:{})}),env);
-}
-async function login(username,password){const r=await call('/api/account-login','POST',{username,password,profile:'prof'});assert.equal(r.status,200);return r.headers.getSetCookie()[0].split(';')[0];}
-const teacher=await login('professora@example.test','teacher-test-only'),student=await login('aluno.teste','account-test-only'),parent=await login('responsavel.teste','account-test-only');
-let r=await call('/api/school','GET',null,teacher);assert.equal(r.status,200);let data=await r.json();
-const studentId=data.students[0].id,parentId=data.accounts.find(a=>a.role==='parent').id;
-assert.ok(data.accounts.find(a=>a.id===studentId).last_seen_at);
-async function create(kind,values={}){const r=await call('/api/school/items','POST',{kind,title:'Título de teste',body:'Conteúdo fictício de teste',...values},teacher);assert.equal(r.status,201);return (await r.json()).id;}
-const taskId=await create('task',{title:'Revisar o conteúdo da semana',body:'Escolha um tema da última aula e resolva três exercícios.',subject:'Matemática',studentId});
-await create('notice',{title:'Boas-vindas à turma',body:'Use este espaço para acompanhar as atividades e conversar com a escola.'});
-await create('event',{title:'Encontro com as famílias',body:'Conversa sobre a rotina de estudos e os próximos passos.',dueAt:'2026-11-20',format:'Online'});
-const authorizationId=await create('authorization',{title:'Participação na atividade da turma',body:'Confirme a participação do aluno nesta atividade.',studentId});
-await create('observation',{title:'Participação em aula',body:'Demonstrou empenho e fez boas perguntas durante a atividade.',studentId,category:'Participação'});
-const attentionId=await create('observation',{title:'Observação reservada à família',body:'Acompanhar a rotina de descanso.',studentId,category:'Atenção'});
-const reportId=await create('report',{title:'Relatório da semana',body:'O aluno avançou nas atividades. Em casa, reservem um horário para revisão.',studentId});
-r=await call('/api/school','GET',null,parent);data=await r.json();assert.ok(!data.items.some(i=>i.id===reportId));assert.equal(data.students.length,0);
-r=await call('/api/school/links','POST',{parentId,studentId},teacher);assert.equal(r.status,201);
-r=await call('/api/school','GET',null,parent);data=await r.json();assert.equal(data.students.length,1);assert.ok(data.items.some(i=>i.id===reportId));
-r=await call('/api/school','GET',null,student);data=await r.json();assert.ok(data.items.some(i=>i.id===taskId));assert.ok(!data.items.some(i=>i.id===authorizationId));assert.ok(!data.items.some(i=>i.id===attentionId));assert.equal(data.accounts.length,0);
-r=await call('/api/school/items/'+taskId+'/response','POST',{status:'done'},student);assert.equal(r.status,200);
-r=await call('/api/school','GET',null,teacher);data=await r.json();assert.ok(data.responses.some(a=>a.item_id===taskId&&a.account_id===studentId&&a.status==='done'));
-r=await call('/api/school/items/'+authorizationId+'/response','POST',{status:'approved'},parent);assert.equal(r.status,200);
-r=await call('/api/school/items/'+authorizationId+'/response','POST',{status:'approved'},student);assert.equal(r.status,403);
-r=await call('/api/school/items','POST',{kind:'task',title:'Não permitido',body:'Não permitido'},student);assert.equal(r.status,403);
-r=await call('/api/school/items','POST',{kind:'goal',title:'Estudar um pouco a cada dia'},student);assert.equal(r.status,201);const goalId=(await r.json()).id;
-r=await call('/api/school/items/'+goalId+'/response','POST',{status:'done'},student);assert.equal(r.status,200);
-r=await call('/api/school','GET',null,parent);data=await r.json();assert.ok(!data.items.some(i=>i.id===goalId));
-r=await call('/api/school/items','POST',{kind:'message',title:'Dúvida',body:'Como posso revisar esta atividade?'},student);assert.equal(r.status,201);const messageId=(await r.json()).id;
-r=await call('/api/school','GET',null,teacher);data=await r.json();assert.ok(data.items.some(i=>i.id===messageId));
-r=await call('/api/school','GET',null,parent);data=await r.json();assert.ok(!data.items.some(i=>i.id===messageId));
-r=await call('/api/school/links','POST',{parentId,studentId},parent);assert.equal(r.status,403);
-r=await call('/api/school/items/'+taskId,'DELETE',null,student);assert.equal(r.status,403);
-r=await call('/api/school');assert.equal(r.status,401);
-// An independent teacher and their students never receive another class's data.
-r=await call('/api/register-teacher','POST',{name:'Outra professora de teste',email:'outra@example.test',password:'teacher-test-only'});assert.equal(r.status,201);
-const secondTeacher=env.DB.raw.prepare("SELECT * FROM accounts WHERE login='outra@example.test'").get();env.DB.raw.prepare("UPDATE accounts SET status='active' WHERE id=?").run(secondTeacher.id);
-const other=await login('outra@example.test','teacher-test-only');
-r=await call('/api/school','GET',null,other);data=await r.json();assert.equal(data.items.length,0);assert.equal(data.students.length,0);
-r=await call('/api/school/items','POST',{kind:'report',title:'Não permitido',body:'Não permitido',studentId},other);assert.equal(r.status,403);
-r=await call('/api/school/items/'+taskId+'/response','POST',{status:'done'},other);assert.equal(r.status,404);
-r=await worker.fetch(new Request(origin+'/'),env);const shell=await r.text();assert.ok(shell.includes('id="school-app"'));assert.ok(!shell.includes('<iframe'));assert.ok(shell.includes('school.js'));assert.ok(shell.includes('brand-logo.svg'));
-for(const asset of ['school.js','school.css','brand-icon.svg','brand-logo.svg']){r=await worker.fetch(new Request(origin+'/'+asset),env);assert.equal(r.status,200);}
-const event=env.DB.raw.prepare("SELECT id FROM school_items WHERE kind='event'").get();
-r=await call('/api/school/items/'+event.id,'PATCH',{dueAt:'2026-11-20T14:00',endAt:'2026-11-20T15:00'},teacher);assert.equal(r.status,200);
-r=await call('/api/school/items/'+event.id,'PATCH',{dueAt:'2026-11-21T14:00'},teacher);assert.equal(r.status,200);
-r=await call('/api/school','GET',null,parent);data=await r.json();const moved=data.items.find(item=>item.id===event.id);assert.equal(moved.due_at,'2026-11-21T14:00');assert.equal(moved.payload.endAt,'2026-11-21T15:00');
-r=await call('/api/school/items/'+event.id,'PATCH',{dueAt:'2026-11-22T14:00'},student);assert.equal(r.status,403);
-for(const [path,type]of [['favicon.ico','image/x-icon'],['favicon-32.png','image/png'],['apple-touch-icon.png','image/png']]){r=await worker.fetch(new Request(origin+'/'+path+'?v=4'),env);assert.equal(r.status,200);assert.equal(r.headers.get('Content-Type'),type);const bytes=new Uint8Array(await r.arrayBuffer());assert.ok(bytes.length>100);assert.equal(bytes[0],path.endsWith('.ico')?0:137);}
-const gradeValues={studentId,title:'Avaliação de matemática',body:'',subject:'Matemática',period:'1',score:'8',weight:'2'};
-const gradeId=await create('grade',gradeValues);
-await create('grade',{...gradeValues,title:'Atividade de revisão',score:6,weight:1});
-const zeroId=await create('grade',{...gradeValues,period:'2',score:0});
-for(const invalid of [{score:11},{score:-1},{score:''},{score:null},{score:'abc'},{weight:0},{weight:11},{subject:''},{period:'5'},{studentId:''}]){r=await call('/api/school/items','POST',{kind:'grade',...gradeValues,...invalid},teacher);assert.equal(r.status,400);}
-for(const cookie of [student,parent]){
-  r=await call('/api/school','GET',null,cookie);data=await r.json();assert.ok(data.items.some(i=>i.id===gradeId));assert.equal(data.items.find(i=>i.id===zeroId).payload.score,0);
-  r=await call('/api/school/items','POST',{kind:'grade',...gradeValues},cookie);assert.equal(r.status,403);
-  r=await call('/api/school/items/'+gradeId,'PATCH',gradeValues,cookie);assert.equal(r.status,403);
-  r=await call('/api/school/items/'+gradeId,'DELETE',null,cookie);assert.equal(r.status,403);
-}
-r=await call('/api/school/items/'+gradeId,'PATCH',{...gradeValues,score:9},teacher);assert.equal(r.status,200);
-r=await call('/api/school','GET',null,student);data=await r.json();assert.equal(data.items.find(i=>i.id===gradeId).payload.score,9);
-r=await call('/api/school/items/'+gradeId,'PATCH',gradeValues,other);assert.equal(r.status,403);
-r=await call('/api/accounts','POST',{role:'student',name:'Segundo aluno fictício',login:'segundo.teste',password:'account-test-only'},teacher);assert.equal(r.status,201);
-const secondStudent=await login('segundo.teste','account-test-only');
-r=await call('/api/school','GET',null,secondStudent);data=await r.json();assert.ok(!data.items.some(i=>i.kind==='grade'));
-const disposable=await create('grade',gradeValues);r=await call('/api/school/items/'+disposable,'DELETE',null,teacher);assert.equal(r.status,200);
-for(const cookie of ['',student,parent]){r=await call('/api/examples','POST',{},cookie);assert.equal(r.status,403);r=await call('/api/school/examples','POST',{},cookie);assert.equal(r.status,cookie?403:401);}
-r=await call('/api/school/examples','POST',{},teacher);assert.equal(r.status,201);const seeded=await r.json();assert.ok(seeded.inserted>20);
-r=await call('/api/school/examples','POST',{},teacher);assert.equal((await r.json()).inserted,0);
-r=await call('/api/school','GET',null,student);data=await r.json();assert.equal(data.items.find(i=>i.id===gradeId).payload.score,9);assert.equal(data.items.filter(i=>i.kind==='grade'&&i.payload.source).length,8);assert.ok(!data.items.some(i=>i.student_id&&i.student_id!==studentId&&i.kind!=='message'));
-r=await call('/api/school','GET',null,parent);data=await r.json();assert.equal(data.items.filter(i=>i.kind==='grade'&&i.payload.source).length,8);assert.equal(data.items.filter(i=>i.kind==='goal').length,0);
-const adminResponse=await call('/api/login','POST',{username:'preview-admin',password:'preview-password'});assert.equal(adminResponse.status,200);const adminCookie=adminResponse.headers.getSetCookie()[0].split(';')[0];r=await call('/api/examples','POST',{},adminCookie);assert.equal(r.status,201);assert.equal((await r.json()).teachers,2);
-console.log('Passed: school features, grade permissions and sample seeding with idempotency, existing-data preservation and family/student isolation.');
+import {env,call,login,admin,manager,institutionId,classA,classB,teacher,teacherTwo,student,parent,studentId,studentBId,teacherId,makeAccount} from './check-accounts.mjs';
+const school=(path='',classId=classA)=>'/api/school'+path+'?classId='+classId;
+async function create(kind,values={},cookie=teacher){const r=await call(school('/items'),'POST',{kind,title:'Exemplo · Registro de teste',body:'Conteúdo fictício de teste',...values},cookie);assert.equal(r.status,201,await r.clone().text());return (await r.json()).id;}
+let r=await call(school(),'GET',null,teacher);let data=await r.json();assert.equal(data.teachers.length,2);assert.equal(data.students.length,1);assert.equal(data.institution.id,institutionId);
+const grade={studentId,subject:'Matemática',period:'4',year:2026,component:'n1',score:8,weight:2,body:'',dueAt:'2026-10-20'};
+const gradeId=await create('grade',grade);await create('grade',{...grade,component:'n2',score:6,weight:1,dueAt:'2026-11-10'});const zeroId=await create('grade',{...grade,component:'participation',score:0});
+await create('attendance',{studentId,subject:'Matemática',period:'4',year:2026,lessons:4,absences:1,dueAt:'2026-11-10'});
+for(const bad of [{score:''},{score:null},{score:11},{score:-1},{weight:0},{subject:''},{period:'5'},{component:'invalid'},{year:1800}]){r=await call(school('/items'),'POST',{kind:'grade',title:'Inválida',...grade,...bad},teacher);assert.equal(r.status,400);}
+for(const bad of [{lessons:0,absences:0},{lessons:1,absences:2},{lessons:1.5,absences:1}]){r=await call(school('/items'),'POST',{kind:'attendance',title:'Inválida',studentId,subject:'Matemática',period:'4',year:2026,...bad},teacher);assert.equal(r.status,400);}
+r=await call(school('/items'),'POST',{kind:'grade',title:'Não permitido',...grade,studentId:studentBId},teacher);assert.equal(r.status,403);
+for(const c of [student,parent]){r=await call(school(),'GET',null,c);data=await r.json();assert.ok(data.items.some(i=>i.id===gradeId));assert.equal(data.items.find(i=>i.id===zeroId).payload.score,0);r=await call(school('/items'),'POST',{kind:'grade',title:'Não permitido',...grade},c);assert.equal(r.status,403);r=await call(school('/items/'+gradeId),'PATCH',{title:'Não permitido',...grade},c);assert.equal(r.status,403);}
+r=await call(school(),'GET',null,teacherTwo);assert.ok((await r.json()).items.some(i=>i.id===gradeId));r=await call(school('/items/'+gradeId),'PATCH',{title:'Não é minha nota',...grade},teacherTwo);assert.equal(r.status,403);
+r=await call(school('/items/'+gradeId),'PATCH',{title:'Avaliação corrigida',...grade,score:9},teacher);assert.equal(r.status,200);
+r=await call(school('',classB),'GET',null,teacher);assert.equal(r.status,403);r=await call(school('',classB),'GET',null,parent);assert.equal(r.status,403);
+const studentB=await login('aluno.b','account-test-only');r=await call(school('',classB),'GET',null,studentB);assert.ok(!(await r.json()).items.some(i=>i.id===gradeId));
+const taskId=await create('task',{studentId,subject:'Matemática',title:'Exemplo · Revisão da semana',body:'Revise as atividades da aula.'});r=await call(school('/items/'+taskId+'/response'),'POST',{status:'done'},student);assert.equal(r.status,200);
+const authorization=await create('authorization',{studentId});r=await call(school('/items/'+authorization+'/response'),'POST',{status:'approved'},parent);assert.equal(r.status,200);r=await call(school('/items/'+authorization+'/response'),'POST',{status:'approved'},student);assert.equal(r.status,403);
+const attention=await create('observation',{studentId,category:'Atenção'});r=await call(school(),'GET',null,student);assert.ok(!(await r.json()).items.some(i=>i.id===attention));
+await create('notice',{title:'Exemplo · Recado da turma'});await create('report',{studentId,title:'Exemplo · Relatório semanal'});const eventId=await create('event',{title:'Exemplo · Encontro com famílias',dueAt:'2026-11-26T14:00',endAt:'2026-11-26T15:00'});
+r=await call(school('/items/'+eventId),'PATCH',{dueAt:'2026-11-27T14:00'},teacher);assert.equal(r.status,200);r=await call(school(),'GET',null,parent);assert.equal((await r.json()).items.find(i=>i.id===eventId).payload.endAt,'2026-11-27T15:00');
+const msg=await create('message',{studentId,title:'Conversa privada'});r=await call(school(),'GET',null,teacherTwo);assert.ok(!(await r.json()).items.some(i=>i.id===msg));r=await call(school(),'GET',null,parent);assert.ok(!(await r.json()).items.some(i=>i.id===msg));
+r=await call(school('/items'),'POST',{kind:'message',title:'Dúvida',body:'Mensagem ao segundo professor',studentId:env.DB.raw.prepare("SELECT id FROM accounts WHERE login='outro.prof'").get().id},student);assert.equal(r.status,201);
+r=await call(school('/links'),'POST',{},teacher);assert.equal(r.status,403);
+r=await call('/api/institution/members','POST',{classId:classB,accountId:teacherId},manager);assert.equal(r.status,201);r=await call(school('',classB),'GET',null,teacher);assert.equal((await r.json()).students[0].id,studentBId);
+// A second school never receives or modifies another institution's records.
+r=await call('/api/institutions','POST',{name:'Outra escola de teste',status:'active',billingCycle:'annual',paymentOption:'upfront',studentLimit:1},admin);const otherId=(await r.json()).id;
+r=await call('/api/institutions/'+otherId+'/manager','POST',{name:'Outra gestão',login:'gestao.outra',password:'manager-test-only'},admin);assert.equal(r.status,201);const otherManager=await login('gestao.outra','manager-test-only');
+r=await call('/api/institution/members','POST',{classId:classA,accountId:teacherId},otherManager);assert.equal(r.status,400);r=await call('/api/institution/links','POST',{parentId:env.DB.raw.prepare("SELECT id FROM accounts WHERE login='responsavel.teste'").get().id,studentId},otherManager);assert.equal(r.status,400);
+r=await call('/api/institution/classes','POST',{name:'Turma isolada',academicYear:2026},otherManager);const otherClass=(await r.json()).id;
+for(let n=0;n<2;n++){r=await call('/api/institution/accounts','POST',{role:'student',name:'Estudante '+n,login:'isolado.'+n,password:'account-test-only',classId:otherClass},otherManager);assert.equal(r.status,n===0?201:409);}
+const isolated=await login('isolado.0','account-test-only');r=await call(school(),'GET',null,isolated);assert.equal(r.status,403);r=await call('/api/institution','GET',null,otherManager);assert.equal((await r.json()).accounts.length,2);
+// Student-count pricing is derived by the server, including the 350 boundary and excess students.
+for(const [limit,option,price]of [[350,'upfront',160000],[350,'installments',180000],[351,'upfront',260000],[1000,'installments',280000],[1100,'upfront',285000],[1100,'installments',305000]]){r=await call('/api/institutions/'+otherId,'PATCH',{name:'Outra escola de teste',status:'active',billingCycle:'annual',paymentOption:option,studentLimit:limit},admin);assert.equal(r.status,200);assert.equal(env.DB.raw.prepare('SELECT amount_cents FROM institutions WHERE id=?').get(otherId).amount_cents,price);}
+r=await call('/api/institutions/'+otherId,'PATCH',{name:'Outra escola de teste',status:'suspended',billingCycle:'annual',paymentOption:'upfront',studentLimit:350},admin);assert.equal(r.status,200);r=await call('/api/institution','GET',null,otherManager);assert.equal(r.status,403);r=await call('/api/account-login','POST',{username:'gestao.outra',password:'manager-test-only'});assert.equal(r.status,403);
+r=await call(school('/items/'+zeroId),'DELETE',null,teacher);assert.equal(r.status,200);
+console.log('Passed: shared-teacher classes, academic records, attendance, own-record edits, private messages, family links, institution/class isolation, suspension, capacity and tier pricing.');

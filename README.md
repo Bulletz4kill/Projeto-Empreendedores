@@ -1,14 +1,29 @@
-# Conecta+ — Projeto Empreendedores
+# Conecta+ — Portal escolar
 
-Portal escolar com cadastro de professores, aprovação pelo administrador e criação de acessos de alunos e responsáveis pelos professores.
+Código público sem registros reais, HTML escolar original ou credenciais de produção. Os nomes e dados dos testes são fictícios.
 
-## Cópia pública sem dados escolares
+## Organização
 
-Este repositório não contém o HTML original, seus nomes, registros escolares, notas, mensagens ou integrações da plataforma original. O HTML legado é neutro; os painéis atuais estão incluídos no código e começam sem dados escolares cadastrados. O site hospedado e a cópia local completa são mantidos separadamente. Nenhuma senha real, chave de sessão ou credencial de publicação está incluída aqui.
+- ADM da plataforma: cadastra e autoriza escolas; define ciclo mensal/anual e capacidade contratada. Assinaturas são somente visuais, sem pagamento, checkout ou cobrança automática.
+- Gestão da instituição: cria turmas, contas de professores/alunos/responsáveis, associa professores e alunos às turmas e vincula familiares aos alunos.
+- Professor: publica notas, frequência, tarefas, eventos, observações e relatórios nas turmas a que foi vinculado. Não cria contas.
+- Aluno e responsável: mantêm seus painéis e acesso apenas aos dados permitidos pela turma e pelos vínculos familiares.
 
-## Executar e testar
+O boletim unificado apresenta avaliações por componente, médias ponderadas, faltas e aulas por aluno, disciplina, ano e bimestre. Notas ausentes aparecem como traço; zero é uma nota real. A parcial exclui avaliação final; a média final pondera todas as avaliações lançadas. Substitutivas não trocam notas automaticamente. O gráfico cronológico continua disponível.
 
-Requer Node.js 22.13 ou superior, sem instalar dependências.
+## Planos demonstrativos
+
+| Capacidade | À vista | Em até 12x (total) |
+| --- | --- | --- |
+| Até 350 alunos | R$ 1.600 | R$ 1.800 |
+| De 351 a 1.000 alunos | R$ 2.600 | R$ 2.800 |
+| Acima de 1.000 | Base de R$ 2.600 + R$ 2,50/aluno excedente | Base de R$ 2.800 + R$ 2,50/aluno excedente |
+
+O servidor calcula os valores pela capacidade informada. O ciclo de assinatura é administrativo/visual e não executa cobranças.
+
+## Executar
+
+Requer Node.js 22.13 ou superior. Não precisa instalar dependências.
 
 ```sh
 node site-planner/prepare.cjs
@@ -16,34 +31,18 @@ node site-planner/build-worker.cjs
 node site-planner/check-auth.mjs
 node site-planner/check-accounts.mjs
 node site-planner/check-school.mjs
+node site-planner/check-chart.mjs
+node site-planner/check-report.mjs
+node site-planner/check-migration.mjs
 node site-planner/preview-worker.mjs
 ```
 
-A prévia completa abre em http://127.0.0.1:4174, usa banco em memória e contas explicitamente fictícias dos testes. Não altera a hospedagem. A prévia estática opcional usa `node site-planner/preview.cjs` e a porta 4173.
+A prévia usa banco em memória em http://127.0.0.1:4174 e contas fictícias definidas nos testes. Não altera a hospedagem.
 
-## Configuração do servidor
+## Servidor e migração
 
-Defina `ADMIN_USERNAME`, `ADMIN_PASSWORD` e `AUTH_SECRET` no ambiente. Senha e chave de sessão devem ser configuradas como segredos; não as grave no Git. Use um binding D1 chamado `DB` e aplique `site-planner/drizzle/0000_accounts.sql`. A configuração de Sites está em `site-planner/.openai/hosting.json`; para uma hospedagem própria, substitua a identidade do projeto pela sua.
+Use o binding D1 DB e aplique todas as migrações da pasta drizzle em ordem. Configure ADMIN_USERNAME, ADMIN_PASSWORD e AUTH_SECRET no ambiente; senha e chave de sessão são segredos. A identidade em .openai/hosting.json pertence ao projeto original; substitua-a antes de hospedar uma cópia própria.
 
-O Worker final é gerado em `site-planner/dist/server/index.js`. O upload ao GitHub não publica automaticamente o site.
+A migração 0002 adiciona somente o esquema. Após publicá-la, o ADM pode executar POST /api/admin/migrate-legacy com sessão autenticada para preservar e associar os cadastros antigos a uma escola e turma existentes. A operação é idempotente e mantém senhas, notas, registros e vínculos familiares. O ADM cria em seguida o acesso do gestor para cada escola migrada. Migrações e exemplos não criam credenciais de produção automaticamente.
 
-## Fluxo de acesso
-
-1. O professor se cadastra com nome, e-mail e senha.
-2. O administrador aprova o cadastro no painel administrativo.
-3. O professor cria usuários e senhas para alunos e responsáveis.
-4. Cada conta entra no perfil correspondente. Professores veem apenas os acessos que criaram.
-
-As senhas de novas contas usam PBKDF2 com salt individual. As sessões usam cookies assinados, HttpOnly, Secure e SameSite. O limite de tentativas fica na memória de cada instância; não é um bloqueio distribuído.
-
-Os testes cobrem aprovação, senha incorreta, isolamento de perfis, permissões de criação, ausência de hashes nas respostas, cookies alterados, logout e carregamento do planner. Nenhuma conta real é criada pelos testes. Os painéis atuais usam o D1 para tarefas, avisos, agenda, evolução, relatórios, metas, mensagens, autorizações e vínculos entre responsáveis e alunos. Aplique todas as migrações da pasta drizzle em ordem.
-
-O login escolar identifica o perfil pelo cadastro após validar a senha, mesmo quando outra aba está selecionada. Uma conta de aluno continua sem permissões de professor. Ao entrar, o cookie do outro tipo de sessão é encerrado. O formulário mantém a senha protegida em caso de erro para permitir a correção.
-
-Os painéis são renderizados diretamente no site, sem iframe. Professores publicam atividades e acompanham respostas; alunos organizam metas e concluem tarefas; responsáveis vinculados acompanham relatórios e respondem a autorizações. Mensagens privadas ficam restritas ao professor e ao destinatário. A logo vetorial está em site-planner/dist/brand-logo.svg.
-
-## Notas e exemplos
-
-A aba Notas calcula médias ponderadas e mostra a evolução cronológica por aluno, matéria e bimestre. O gráfico usa a data da avaliação ou, quando ausente, a data do lançamento. Execute `node site-planner/check-chart.mjs` para verificar ordenação, filtros e casos sem notas.
-
-Os dados de exemplo do gerador são inteiramente fictícios. Professores podem adicioná-los à própria turma pelo painel; repetir a carga não duplica registros existentes. Eles são identificados pelo título Exemplo e por um marcador no payload. A carga não substitui dados cadastrados, cria logins ou altera vínculos familiares. A demonstração na tela de acesso também usa esses exemplos.
+As senhas usam PBKDF2 com salt individual; sessões usam cookies assinados HttpOnly/Secure/SameSite. A escola precisa estar autorizada para suas contas entrarem. Os testes verificam isolamento entre escolas e turmas, permissões de criação/edição, privacidade de mensagens, capacidade contratada, preços, suspensão, boletim e preservação na migração.

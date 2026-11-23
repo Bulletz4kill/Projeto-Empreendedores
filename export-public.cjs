@@ -5,6 +5,7 @@ files.push('site-planner/check-school.mjs','site-planner/worker/school.mjs','sit
 files.push('site-planner/dist/calendar.js','site-planner/create-favicon.cjs','site-planner/dist/favicon.ico','site-planner/dist/favicon-32.png','site-planner/dist/apple-touch-icon.png');
 files.push('site-planner/dist/grade-chart.js','site-planner/dist/examples.js','site-planner/check-chart.mjs');
 files.push('site-planner/dist/portal.css');
+files.push('site-planner/worker/institutions.mjs','site-planner/drizzle/0002_institutions.sql','site-planner/dist/institutions.js','site-planner/dist/institutions.css','site-planner/dist/report-card.js','site-planner/dist/report-card.css','site-planner/check-migration.mjs','site-planner/check-report.mjs');
 for(const file of files){const destination=path.join(target,file);fs.mkdirSync(path.dirname(destination),{recursive:true});fs.copyFileSync(path.join(root,file),destination);}
 const prepare=path.join(target,'site-planner/prepare.cjs');
 fs.writeFileSync(prepare,fs.readFileSync(prepare,'utf8').replace("let html = fs.readFileSync(path.join(root, source), 'utf8');","if(!source){console.log('Public export: using the empty planner, without school data.');process.exit(0);}\nlet html = fs.readFileSync(path.join(root, source), 'utf8');"));
@@ -15,4 +16,53 @@ const readmePath=path.join(target,'README.md');
 fs.writeFileSync(readmePath,fs.readFileSync(readmePath,'utf8').replace('O planner incluído está vazio.','O HTML legado é neutro; os painéis atuais estão incluídos no código e começam sem dados escolares cadastrados.').replace('O conteúdo pedagógico e a sincronização entre famílias e turmas precisam ser conectados separadamente.','Os painéis atuais usam o D1 para tarefas, avisos, agenda, evolução, relatórios, metas, mensagens, autorizações e vínculos entre responsáveis e alunos. Aplique todas as migrações da pasta drizzle em ordem.').replace('node site-planner/check-accounts.mjs\n','node site-planner/check-accounts.mjs\nnode site-planner/check-school.mjs\n'));
 fs.appendFileSync(readmePath,'\nO login escolar identifica o perfil pelo cadastro após validar a senha, mesmo quando outra aba está selecionada. Uma conta de aluno continua sem permissões de professor. Ao entrar, o cookie do outro tipo de sessão é encerrado. O formulário mantém a senha protegida em caso de erro para permitir a correção.\n\nOs painéis são renderizados diretamente no site, sem iframe. Professores publicam atividades e acompanham respostas; alunos organizam metas e concluem tarefas; responsáveis vinculados acompanham relatórios e respondem a autorizações. Mensagens privadas ficam restritas ao professor e ao destinatário. A logo vetorial está em site-planner/dist/brand-logo.svg.\n');
 fs.appendFileSync(readmePath,'\n## Notas e exemplos\n\nA aba Notas calcula médias ponderadas e mostra a evolução cronológica por aluno, matéria e bimestre. O gráfico usa a data da avaliação ou, quando ausente, a data do lançamento. Execute `node site-planner/check-chart.mjs` para verificar ordenação, filtros e casos sem notas.\n\nOs dados de exemplo do gerador são inteiramente fictícios. Professores podem adicioná-los à própria turma pelo painel; repetir a carga não duplica registros existentes. Eles são identificados pelo título Exemplo e por um marcador no payload. A carga não substitui dados cadastrados, cria logins ou altera vínculos familiares. A demonstração na tela de acesso também usa esses exemplos.\n');
+fs.writeFileSync(readmePath,`# Conecta+ — Portal escolar
+
+Código público sem registros reais, HTML escolar original ou credenciais de produção. Os nomes e dados dos testes são fictícios.
+
+## Organização
+
+- ADM da plataforma: cadastra e autoriza escolas; define ciclo mensal/anual e capacidade contratada. Assinaturas são somente visuais, sem pagamento, checkout ou cobrança automática.
+- Gestão da instituição: cria turmas, contas de professores/alunos/responsáveis, associa professores e alunos às turmas e vincula familiares aos alunos.
+- Professor: publica notas, frequência, tarefas, eventos, observações e relatórios nas turmas a que foi vinculado. Não cria contas.
+- Aluno e responsável: mantêm seus painéis e acesso apenas aos dados permitidos pela turma e pelos vínculos familiares.
+
+O boletim unificado apresenta avaliações por componente, médias ponderadas, faltas e aulas por aluno, disciplina, ano e bimestre. Notas ausentes aparecem como traço; zero é uma nota real. A parcial exclui avaliação final; a média final pondera todas as avaliações lançadas. Substitutivas não trocam notas automaticamente. O gráfico cronológico continua disponível.
+
+## Planos demonstrativos
+
+| Capacidade | À vista | Em até 12x (total) |
+| --- | --- | --- |
+| Até 350 alunos | R$ 1.600 | R$ 1.800 |
+| De 351 a 1.000 alunos | R$ 2.600 | R$ 2.800 |
+| Acima de 1.000 | Base de R$ 2.600 + R$ 2,50/aluno excedente | Base de R$ 2.800 + R$ 2,50/aluno excedente |
+
+O servidor calcula os valores pela capacidade informada. O ciclo de assinatura é administrativo/visual e não executa cobranças.
+
+## Executar
+
+Requer Node.js 22.13 ou superior. Não precisa instalar dependências.
+
+\`\`\`sh
+node site-planner/prepare.cjs
+node site-planner/build-worker.cjs
+node site-planner/check-auth.mjs
+node site-planner/check-accounts.mjs
+node site-planner/check-school.mjs
+node site-planner/check-chart.mjs
+node site-planner/check-report.mjs
+node site-planner/check-migration.mjs
+node site-planner/preview-worker.mjs
+\`\`\`
+
+A prévia usa banco em memória em http://127.0.0.1:4174 e contas fictícias definidas nos testes. Não altera a hospedagem.
+
+## Servidor e migração
+
+Use o binding D1 DB e aplique todas as migrações da pasta drizzle em ordem. Configure ADMIN_USERNAME, ADMIN_PASSWORD e AUTH_SECRET no ambiente; senha e chave de sessão são segredos. A identidade em .openai/hosting.json pertence ao projeto original; substitua-a antes de hospedar uma cópia própria.
+
+A migração 0002 adiciona somente o esquema. Após publicá-la, o ADM pode executar POST /api/admin/migrate-legacy com sessão autenticada para preservar e associar os cadastros antigos a uma escola e turma existentes. A operação é idempotente e mantém senhas, notas, registros e vínculos familiares. O ADM cria em seguida o acesso do gestor para cada escola migrada. Migrações e exemplos não criam credenciais de produção automaticamente.
+
+As senhas usam PBKDF2 com salt individual; sessões usam cookies assinados HttpOnly/Secure/SameSite. A escola precisa estar autorizada para suas contas entrarem. Os testes verificam isolamento entre escolas e turmas, permissões de criação/edição, privacidade de mensagens, capacidade contratada, preços, suspensão, boletim e preservação na migração.
+`);
 console.log('Public export prepared: '+files.length+' source files, README, and empty planner.');

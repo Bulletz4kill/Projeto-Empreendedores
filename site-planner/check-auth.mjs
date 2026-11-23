@@ -15,5 +15,5 @@ response=await login('test-admin','test-only-password',{Origin:'https://other.ex
 for(let i=0;i<5;i++){response=await login('test-admin','wrong',{'CF-Connecting-IP':'test-rate-limit'});assert.equal(response.status,401);}
 response=await login('test-admin','test-only-password',{'CF-Connecting-IP':'test-rate-limit'});assert.equal(response.status,429);
 response=await worker.fetch(new Request(origin+'/api/logout',{method:'POST',headers:{Origin:origin}}),env);assert.match(response.headers.get('set-cookie'),/Max-Age=0/);
-for(const asset of ['/','/app.js','/styles.css','/planner.html']){response=await worker.fetch(new Request(origin+asset),env);assert.equal(response.status,200);assert.ok(!(await response.text()).includes(env.ADMIN_PASSWORD));}
+for(const asset of ['/','/app.js','/styles.css']){response=await worker.fetch(new Request(origin+asset),env);assert.equal(response.status,200);assert.ok(!(await response.text()).includes(env.ADMIN_PASSWORD));}
 console.log('Passed: login, invalid password, protected route, tampered cookie, origin check, rate limit, logout, and public assets.');

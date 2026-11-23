@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="school.css">
 <link rel="stylesheet" href="portal.css">
+<link rel="stylesheet" href="institutions.css">
+<link rel="stylesheet" href="report-card.css">
 <link rel="shortcut icon" href="favicon.ico?v=4" type="image/x-icon">
 <link rel="icon" href="favicon-32.png?v=4" type="image/png" sizes="32x32">
 <link rel="icon" href="brand-icon.svg?v=4" type="image/svg+xml" sizes="any">
@@ -32,7 +34,7 @@
 <button class="primary" type="submit">Entrar <span aria-hidden="true">→</span></button>
 <p id="form-status" role="status" aria-live="polite"></p>
 </form>
-<p class="create-access"><button id="create-teacher" type="button">Criar acesso de professor</button></p>
+<p class="create-access" hidden><button id="create-teacher" type="button">Criar acesso de professor</button></p>
 <form id="teacher-registration" hidden>
 <label for="teacher-name">Nome completo</label><input id="teacher-name" name="name" autocomplete="name" maxlength="120" required>
 <label for="teacher-email">E-mail do professor</label><input id="teacher-email" name="email" type="email" autocomplete="email" maxlength="120" required>
@@ -47,6 +49,7 @@
 </div>
 </section>
 <p class="admin-access"><button id="admin-access" type="button">Acesso administrativo</button></p>
+<p class="admin-access"><button id="school-access" type="button">Acesso da escola / instituição</button></p>
 <p class="footer-note"><span aria-hidden="true">♡</span> Aprender é um caminho que fazemos juntos.</p>
 </main>
 <section id="workspace" hidden aria-label="Planner"><nav class="workspace-bar"><span id="workspace-title">Espaço da professora</span><button id="logout" type="button">← Voltar aos acessos</button></nav>
@@ -59,11 +62,13 @@
 </form>
 <p id="management-status" role="status" aria-live="polite"></p><div id="account-list"></div>
 </section>
-<main id="school-app" hidden aria-label="Portal escolar"></main></section>
+<main id="school-app" hidden aria-label="Portal escolar"></main><section id="org-app" hidden aria-label="Gestão da instituição"></section></section>
 <footer>Conecta+ <span>Conexões que ajudam a crescer.</span></footer>
 <script src="calendar.js"></script>
 <script src="grade-chart.js"></script>
+<script src="report-card.js"></script>
 <script src="examples.js"></script>
 <script src="school.js"></script>
+<script src="institutions.js"></script>
 <script src="app.js"></script>
 </body></html>

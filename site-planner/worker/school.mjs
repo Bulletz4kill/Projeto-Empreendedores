@@ -1,135 +1,44 @@
 const schoolJson=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
-const schoolKinds=new Set(['task','notice','event','observation','report','authorization','message','goal','reminder','grade']);
-const schoolTeacherKinds=new Set(['task','notice','event','observation','report','authorization','message','grade']);
-function gradePayload(values){
-  const subject=schoolClean(values.subject,80),period=String(values.period||''),score=Number(values.score),weight=Number(values.weight??1);
-  if(!subject||!['1','2','3','4'].includes(period)||values.score===null||values.score===undefined||String(values.score).trim()===''||!Number.isFinite(score)||score<0||score>10||!Number.isFinite(weight)||weight<=0||weight>10)return null;
-  return {subject,period,score,weight};
+const schoolKinds=new Set(['task','notice','event','observation','report','authorization','message','goal','reminder','grade','attendance']);
+const schoolTeacherKinds=new Set([...schoolKinds].filter(k=>!['goal','reminder'].includes(k)));
+function schoolClean(v,max=3000){return typeof v==='string'?v.trim().slice(0,max):'';}
+async function schoolBody(r){try{const text=await r.text();if(text.length>12000)throw Error();const v=JSON.parse(text);if(!v||typeof v!=='object'||Array.isArray(v))throw Error();return v;}catch{throw Error('invalid_body');}}
+function gradePayload(v){const subject=schoolClean(v.subject,80),period=String(v.period||''),score=Number(v.score),weight=Number(v.weight??1),year=Number(v.year||new Date().getUTCFullYear()),component=v.component||'other';if(!subject||!['1','2','3','4'].includes(period)||v.score==null||String(v.score).trim()===''||!Number.isFinite(score)||score<0||score>10||!Number.isFinite(weight)||weight<=0||weight>10||!Number.isInteger(year)||year<2000||year>2100||!['n1','n2','integrated','participation','substitute','final','other'].includes(component))return null;return {subject,period,score,weight,year,component};}
+function attendancePayload(v){const subject=schoolClean(v.subject,80),period=String(v.period||''),year=Number(v.year||new Date().getUTCFullYear()),lessons=Number(v.lessons),absences=Number(v.absences);if(!subject||!['1','2','3','4'].includes(period)||!Number.isInteger(year)||year<2000||year>2100||!Number.isInteger(lessons)||lessons<1||lessons>100||!Number.isInteger(absences)||absences<0||absences>lessons)return null;return {subject,period,year,lessons,absences};}
+async function schoolContext(env,user,url){
+  if(!user.institution_id||!['teacher','student','parent'].includes(user.role))return null;
+  const institution=await env.DB.prepare("SELECT id,name,pass_grade,attendance_min FROM institutions WHERE id=? AND status='active'").bind(user.institution_id).first();if(!institution)return null;
+  const all=(await env.DB.prepare("SELECT id,name,login,role,created_by,last_seen_at FROM accounts WHERE institution_id=? AND account_kind='person' AND status='active' ORDER BY name").bind(institution.id).all()).results;
+  const members=(await env.DB.prepare('SELECT m.* FROM class_members m JOIN classes c ON c.id=m.class_id WHERE c.institution_id=?').bind(institution.id).all()).results;
+  const links=(await env.DB.prepare('SELECT l.parent_id,l.student_id FROM school_links l JOIN accounts a ON a.id=l.parent_id WHERE a.institution_id=?').bind(institution.id).all()).results;
+  const childIds=user.role==='parent'?links.filter(l=>l.parent_id===user.id).map(l=>l.student_id):[user.id],allowed=members.filter(m=>childIds.includes(m.account_id)).map(m=>m.class_id);
+  const classes=(await env.DB.prepare('SELECT * FROM classes WHERE institution_id=? ORDER BY academic_year DESC,name').bind(institution.id).all()).results.filter(c=>allowed.includes(c.id)),requested=url.searchParams.get('classId'),selectedClass=classes.find(c=>c.id===requested)||(!requested?classes[0]:null);if(requested&&!selectedClass)return {denied:true};
+  const ids=members.filter(m=>m.class_id===selectedClass?.id).map(m=>m.account_id),teachers=all.filter(a=>a.role==='teacher'&&ids.includes(a.id)),classStudents=all.filter(a=>a.role==='student'&&ids.includes(a.id)),students=classStudents.filter(a=>user.role==='teacher'||childIds.includes(a.id)),classStudentIds=classStudents.map(a=>a.id),parentIds=links.filter(l=>classStudentIds.includes(l.student_id)).map(l=>l.parent_id);
+  return {institution,classes,selectedClass,teacherId:teachers[0]?.id,teachers,students,accounts:user.role==='teacher'?all.filter(a=>ids.includes(a.id)||parentIds.includes(a.id)):[],links:user.role==='teacher'?links.filter(l=>classStudentIds.includes(l.student_id)):links.filter(l=>l.parent_id===user.id)};
 }
-const schoolPublicAccount='id, name, login, role, created_by, last_seen_at';
-export async function seedSchoolExamples(env,teacherId){
-  const students=(await env.DB.prepare("SELECT id FROM accounts WHERE created_by = ? AND role = 'student' AND status = 'active'").bind(teacherId).all()).results;
-  const rows=await globalThis.ConectaExamples.items(teacherId,students);
-  let inserted=0;
-  for(const row of rows){const result=await env.DB.prepare('INSERT INTO school_items (id,kind,teacher_id,student_id,author_id,title,body,payload,due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(row.id,row.kind,row.teacher_id,row.student_id,row.author_id,row.title,row.body,JSON.stringify(row.payload),row.due_at,row.created_at,row.updated_at).run();inserted+=result.meta.changes||0;}
-  return {inserted,students:students.length};
-}
-async function schoolContext(env,user){
-  const teacherId=user.role==='teacher'?user.id:user.created_by;
-  if(!teacherId)return {teacherId:null,students:[],accounts:[],links:[]};
-  const all=(await env.DB.prepare(`SELECT ${schoolPublicAccount} FROM accounts WHERE created_by = ? AND status = 'active' ORDER BY name`).bind(teacherId).all()).results;
-  const links=(await env.DB.prepare('SELECT parent_id, student_id FROM school_links WHERE teacher_id = ?').bind(teacherId).all()).results;
-  const ids=user.role==='student'?[user.id]:user.role==='parent'?links.filter(link=>link.parent_id===user.id).map(link=>link.student_id):all.filter(a=>a.role==='student').map(a=>a.id);
-  return {teacherId,students:all.filter(a=>a.role==='student'&&ids.includes(a.id)),accounts:user.role==='teacher'?all:[],links:user.role==='teacher'?links:links.filter(l=>l.parent_id===user.id)};
-}
-function schoolVisible(item,user,context){
-  if(item.teacher_id!==context.teacherId)return false;
-  if(['goal','reminder'].includes(item.kind))return item.author_id===user.id;
-  if(item.kind==='message')return user.role==='teacher'||item.author_id===user.id||item.student_id===user.id;
-  if(user.role==='teacher')return true;
-  if(item.kind==='authorization'&&user.role==='student')return false;
-  if(item.kind==='observation'&&item.payload?.category==='Atenção'&&user.role==='student')return false;
-  return !item.student_id||context.students.some(a=>a.id===item.student_id);
-}
-async function schoolRows(env,teacherId){
-  const rows=(await env.DB.prepare('SELECT * FROM school_items WHERE teacher_id = ? ORDER BY created_at DESC LIMIT 1000').bind(teacherId).all()).results;
-  return rows.map(row=>({...row,payload:JSON.parse(row.payload||'{}')}));
-}
-function schoolClean(value,max=3000){return typeof value==='string'?value.trim().slice(0,max):'';}
-async function schoolBody(request){const text=await request.text();if(text.length>12000)throw new Error('invalid_body');const data=JSON.parse(text);if(!data||typeof data!=='object'||Array.isArray(data))throw new Error('invalid_body');return data;}
+function schoolVisible(i,u,c){if(i.institution_id!==c.institution.id||i.class_id!==c.selectedClass?.id)return false;if(['goal','reminder'].includes(i.kind))return i.author_id===u.id;if(i.kind==='message')return i.author_id===u.id||i.student_id===u.id;if(u.role==='teacher')return true;if(i.kind==='authorization'&&u.role==='student')return false;if(i.kind==='observation'&&i.payload?.category==='Atenção'&&u.role==='student')return false;return !i.student_id||c.students.some(a=>a.id===i.student_id);}
+async function schoolRows(env,c){if(!c.selectedClass)return [];return (await env.DB.prepare('SELECT * FROM school_items WHERE institution_id=? AND class_id=? ORDER BY created_at DESC LIMIT 5000').bind(c.institution.id,c.selectedClass.id).all()).results.map(r=>({...r,payload:JSON.parse(r.payload||'{}')}));}
+export async function seedSchoolExamples(env,teacherId,classId=null){const teacher=await env.DB.prepare("SELECT * FROM accounts WHERE id=? AND role='teacher' AND account_kind='person'").bind(teacherId).first();if(!teacher?.institution_id)return {inserted:0,students:0};const c=await schoolContext(env,teacher,new URL('https://example.test/api/school'+(classId?'?classId='+encodeURIComponent(classId):'')));if(!c?.selectedClass)return {inserted:0,students:0};const rows=await globalThis.ConectaExamples.items(teacherId+c.selectedClass.id,c.students);let inserted=0;for(const r of rows){const result=await env.DB.prepare('INSERT INTO school_items(id,kind,teacher_id,student_id,author_id,title,body,payload,due_at,created_at,updated_at,institution_id,class_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(r.id,r.kind,teacher.id,r.student_id,['goal','reminder'].includes(r.kind)?r.student_id:teacher.id,r.title,r.body,JSON.stringify({...r.payload,year:c.selectedClass.academic_year}),r.due_at,r.created_at,r.updated_at,teacher.institution_id,c.selectedClass.id).run();inserted+=result.meta.changes||0;}return {inserted,students:c.students.length};}
 export async function schoolApi(request,env,url,user){
-  const context=await schoolContext(env,user);
-  if(!context.teacherId)return schoolJson({error:'Sua conta precisa estar vinculada a um professor.'},409);
-  const path=url.pathname,now=new Date().toISOString();
-  if(path==='/api/school/examples'&&request.method==='POST'){
-    if(user.role!=='teacher')return schoolJson({error:'Somente o professor pode adicionar exemplos à turma.'},403);
-    return schoolJson(await seedSchoolExamples(env,user.id),201);
-  }
-  if(path==='/api/school'&&request.method==='GET'){
-    const teacher=await env.DB.prepare('SELECT id, name FROM accounts WHERE id = ?').bind(context.teacherId).first();
-    const items=(await schoolRows(env,context.teacherId)).filter(item=>schoolVisible(item,user,context));
-    const responses=(await env.DB.prepare('SELECT r.* FROM school_responses r JOIN school_items i ON i.id = r.item_id WHERE i.teacher_id = ?').bind(context.teacherId).all()).results.filter(r=>user.role==='teacher'||r.account_id===user.id||context.students.some(a=>a.id===r.account_id));
-    return schoolJson({user,teacher,students:context.students,accounts:context.accounts,links:context.links,items,responses});
-  }
-  if(path==='/api/school/links'&&request.method==='POST'){
-    if(user.role!=='teacher')return schoolJson({error:'Somente o professor pode vincular responsáveis.'},403);
-    const data=await schoolBody(request),parent=context.accounts.find(a=>a.id===data.parentId&&a.role==='parent'),student=context.students.find(a=>a.id===data.studentId);
-    if(!parent||!student)return schoolJson({error:'Selecione um responsável e um aluno da sua turma.'},400);
-    await env.DB.prepare('INSERT INTO school_links (parent_id, student_id, teacher_id) VALUES (?, ?, ?) ON CONFLICT(parent_id,student_id) DO NOTHING').bind(parent.id,student.id,user.id).run();
-    return schoolJson({ok:true},201);
-  }
+  const c=await schoolContext(env,user,url);if(!c)return schoolJson({error:'Seu perfil não tem acesso ao portal da turma.'},403);if(c.denied)return schoolJson({error:'Turma não autorizada para sua conta.'},403);const path=url.pathname,now=new Date().toISOString();
+  if(path==='/api/school'&&request.method==='GET'){const items=(await schoolRows(env,c)).filter(i=>schoolVisible(i,user,c)),ids=new Set(items.map(i=>i.id));const responses=(await env.DB.prepare('SELECT r.* FROM school_responses r JOIN school_items i ON i.id=r.item_id WHERE i.institution_id=? AND i.class_id=?').bind(c.institution.id,c.selectedClass?.id||'').all()).results.filter(r=>ids.has(r.item_id)&&(user.role==='teacher'||r.account_id===user.id||c.students.some(a=>a.id===r.account_id)));return schoolJson({user,teacher:c.teachers[0]||null,teachers:c.teachers,institution:c.institution,classes:c.classes,selectedClass:c.selectedClass,students:c.students,accounts:c.accounts,links:c.links,items,responses});}
+  if(!c.selectedClass)return schoolJson({error:'Sua conta ainda não tem uma turma vinculada. Contate a instituição.'},409);
+  if(path==='/api/school/links')return schoolJson({error:'Os vínculos familiares agora são definidos pela instituição.'},403);
+  if(path==='/api/school/examples'&&request.method==='POST'){if(user.role!=='teacher')return schoolJson({error:'Acesso restrito ao professor da turma.'},403);return schoolJson(await seedSchoolExamples(env,user.id,c.selectedClass.id),201);}
   if(path==='/api/school/items'&&request.method==='POST'){
-    const data=await schoolBody(request),kind=data.kind;
-    if(!schoolKinds.has(kind))return schoolJson({error:'Tipo de registro inválido.'},400);
-    if(user.role==='teacher'?!schoolTeacherKinds.has(kind):user.role==='student'?!['goal','reminder','message'].includes(kind):kind!=='message')return schoolJson({error:'Seu perfil não pode criar esse registro.'},403);
-    const title=schoolClean(data.title,180),body=schoolClean(data.body,5000);
-    if(!title||(!body&&!['goal','reminder','grade'].includes(kind)))return schoolJson({error:'Preencha o título e a descrição.'},400);
-    let studentId=null;
-    if(['goal','reminder'].includes(kind))studentId=user.id;
-    else if(kind==='message'){
-      if(user.role==='teacher'){
-        const target=context.accounts.find(a=>a.id===data.studentId);
-        if(!target)return schoolJson({error:'Selecione o aluno ou responsável destinatário.'},400);
-        studentId=target.id;
-      }else studentId=context.teacherId;
-    }else if(data.studentId){
-      if(!context.students.some(a=>a.id===data.studentId))return schoolJson({error:'Aluno não pertence à sua turma.'},403);
-      studentId=data.studentId;
-    }
-    if(['observation','report','grade'].includes(kind)&&!studentId)return schoolJson({error:'Selecione um aluno.'},400);
-    const payload={};
-    if(kind==='grade'){const grade=gradePayload(data);if(!grade)return schoolJson({error:'Informe a matéria, o bimestre, uma nota de 0 a 10 e um peso maior que 0 e até 10.'},400);Object.assign(payload,grade);}
-    if(kind==='task')payload.subject=schoolClean(data.subject,80)||'Geral';
-    if(kind==='event')payload.format=schoolClean(data.format,60)||'Presencial';
-    if(kind==='observation')payload.category=['Organização','Participação','Esforço','Convivência','Aprendizagem','Atenção'].includes(data.category)?data.category:'Participação';
-    const due=schoolClean(data.dueAt,40);if(due&&!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(due))return schoolJson({error:'Data inválida.'},400);
-    if(kind==='event'&&data.endAt){const end=schoolClean(data.endAt,40);if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(end)||!due||end<=due)return schoolJson({error:'O término precisa ser depois do início.'},400);payload.endAt=end;}
-    const id=crypto.randomUUID();
-    await env.DB.prepare('INSERT INTO school_items (id,kind,teacher_id,student_id,author_id,title,body,payload,due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(id,kind,context.teacherId,studentId,user.id,title,body,JSON.stringify(payload),due||null,now,now).run();
-    return schoolJson({id},201);
+    const v=await schoolBody(request),kind=v.kind;if(!schoolKinds.has(kind))return schoolJson({error:'Tipo de registro inválido.'},400);if(user.role==='teacher'?!schoolTeacherKinds.has(kind):user.role==='student'?!['goal','reminder','message'].includes(kind):kind!=='message')return schoolJson({error:'Seu perfil não pode criar esse registro.'},403);
+    const title=schoolClean(v.title,180),body=schoolClean(v.body,5000);if(!title||(!body&&!['goal','reminder','grade','attendance'].includes(kind)))return schoolJson({error:'Preencha o título e a descrição.'},400);let studentId=null,teacherId=user.role==='teacher'?user.id:c.teacherId;
+    if(['goal','reminder'].includes(kind))studentId=user.id;else if(kind==='message'){const target=user.role==='teacher'?c.accounts.find(a=>a.id===v.studentId&&a.id!==user.id):c.teachers.find(a=>a.id===(v.studentId||c.teacherId));if(!target)return schoolJson({error:'Selecione um destinatário desta turma.'},400);studentId=target.id;if(user.role!=='teacher')teacherId=target.id;}else if(v.studentId){if(!c.students.some(a=>a.id===v.studentId))return schoolJson({error:'Aluno não pertence à turma selecionada.'},403);studentId=v.studentId;}
+    if(['observation','report','grade','attendance'].includes(kind)&&!studentId)return schoolJson({error:'Selecione um aluno.'},400);if(!teacherId)return schoolJson({error:'A instituição precisa vincular um professor a esta turma.'},409);
+    const payload={};if(kind==='grade'||kind==='attendance'){const value=kind==='grade'?gradePayload(v):attendancePayload(v);if(!value)return schoolJson({error:kind==='grade'?'Confira matéria, período, componente, nota de 0 a 10 e peso.':'Confira aulas e faltas; as faltas não podem superar o total de aulas.'},400);Object.assign(payload,value);}if(kind==='task')payload.subject=schoolClean(v.subject,80)||'Geral';if(kind==='event')payload.format=schoolClean(v.format,60)||'Presencial';if(kind==='observation')payload.category=['Organização','Participação','Esforço','Convivência','Aprendizagem','Atenção'].includes(v.category)?v.category:'Participação';const due=schoolClean(v.dueAt,40);if(due&&!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(due))return schoolJson({error:'Data inválida.'},400);if(kind==='event'&&v.endAt){const end=schoolClean(v.endAt,40);if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(end)||!due||end<=due)return schoolJson({error:'O término precisa ser depois do início.'},400);payload.endAt=end;}
+    const id=crypto.randomUUID();await env.DB.prepare('INSERT INTO school_items(id,kind,teacher_id,student_id,author_id,title,body,payload,due_at,created_at,updated_at,institution_id,class_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,kind,teacherId,studentId,user.id,title,body,JSON.stringify(payload),due||null,now,now,c.institution.id,c.selectedClass.id).run();return schoolJson({id},201);
   }
-  const responsePath=path.match(/^\/api\/school\/items\/([a-f0-9-]+)\/response$/);
-  if(responsePath&&request.method==='POST'){
-    const row=await env.DB.prepare('SELECT * FROM school_items WHERE id = ? AND teacher_id = ?').bind(responsePath[1],context.teacherId).first();
-    if(!row)return schoolJson({error:'Registro não encontrado.'},404);
-    const item={...row,payload:JSON.parse(row.payload)},data=await schoolBody(request);
-    if(!schoolVisible(item,user,context))return schoolJson({error:'Acesso negado.'},403);
-    const allowed=item.kind==='task'&&user.role==='student'?['done','pending']:['goal','reminder'].includes(item.kind)&&item.author_id===user.id?['done','pending']:item.kind==='authorization'&&user.role==='parent'?['approved','denied']:item.kind==='event'&&user.role==='parent'?['confirmed','pending']:['notice','report'].includes(item.kind)&&user.role!=='teacher'?['read']:[];
-    if(!allowed.includes(data.status))return schoolJson({error:'Esta ação não está disponível para seu perfil.'},403);
-    await env.DB.prepare('INSERT INTO school_responses (item_id,account_id,status,updated_at) VALUES (?,?,?,?) ON CONFLICT(item_id,account_id) DO UPDATE SET status=excluded.status,updated_at=excluded.updated_at').bind(item.id,user.id,data.status,now).run();
-    return schoolJson({ok:true});
-  }
-  const deletePath=path.match(/^\/api\/school\/items\/([a-f0-9-]+)$/);
-  if(deletePath&&request.method==='PATCH'){
-    const row=await env.DB.prepare('SELECT * FROM school_items WHERE id = ? AND teacher_id = ?').bind(deletePath[1],context.teacherId).first();
-    if(row?.kind==='grade'){
-      if(user.role!=='teacher'||row.author_id!==user.id)return schoolJson({error:'Somente o professor responsável pode editar a nota.'},403);
-      const values=await schoolBody(request),payload=gradePayload(values),title=schoolClean(values.title,180),body=schoolClean(values.body,5000),due=schoolClean(values.dueAt,40);
-      if(!payload||!title)return schoolJson({error:'Preencha a avaliação, matéria, bimestre, nota de 0 a 10 e peso de até 10.'},400);
-      if(!context.students.some(a=>a.id===values.studentId))return schoolJson({error:'Selecione um aluno da sua turma.'},403);
-      if(due&&!/^\d{4}-\d{2}-\d{2}$/.test(due))return schoolJson({error:'Data inválida.'},400);
-      await env.DB.prepare('UPDATE school_items SET title=?,body=?,due_at=?,payload=?,student_id=?,updated_at=? WHERE id=? AND author_id=?').bind(title,body,due||null,JSON.stringify(payload),values.studentId,now,row.id,user.id).run();
-      return schoolJson({ok:true});
-    }
-    if(user.role!=='teacher'||!row||row.author_id!==user.id||row.kind!=='event')return schoolJson({error:'Você só pode editar encontros publicados por você.'},403);
-    const values=await schoolBody(request),due=schoolClean(values.dueAt,40),payload=JSON.parse(row.payload);
-    if(!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(due))return schoolJson({error:'Informe a data e o horário do encontro.'},400);
-    if(values.endAt!==undefined){const end=schoolClean(values.endAt,40);if(end&&(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(end)||end<=due))return schoolJson({error:'O término precisa ser depois do início.'},400);if(end)payload.endAt=end;else delete payload.endAt;}
-    else if(payload.endAt&&row.due_at){const floating=value=>Date.parse(value+(value.includes('T')?'Z':'T00:00:00Z'));const duration=floating(payload.endAt)-floating(row.due_at);payload.endAt=new Date(floating(due)+duration).toISOString().slice(0,16);}
-    const title=values.title===undefined?row.title:schoolClean(values.title,180),body=values.body===undefined?row.body:schoolClean(values.body,5000);
-    if(!title||!body)return schoolJson({error:'Preencha o título e a descrição.'},400);
-    if(values.format!==undefined)payload.format=schoolClean(values.format,60)||'Presencial';
-    const studentId=values.studentId===undefined?row.student_id:values.studentId||null;
-    if(studentId&&!context.students.some(a=>a.id===studentId))return schoolJson({error:'Selecione um aluno da sua turma.'},403);
-    await env.DB.prepare('UPDATE school_items SET title=?,body=?,due_at=?,payload=?,student_id=?,updated_at=? WHERE id=? AND author_id=?').bind(title,body,due,JSON.stringify(payload),studentId,now,row.id,user.id).run();
-    return schoolJson({ok:true});
-  }
-  if(deletePath&&request.method==='DELETE'){
-    const row=await env.DB.prepare('SELECT id, author_id FROM school_items WHERE id = ? AND teacher_id = ?').bind(deletePath[1],context.teacherId).first();
-    if(!row||row.author_id!==user.id)return schoolJson({error:'Você só pode remover seus próprios registros.'},403);
-    await env.DB.prepare('DELETE FROM school_responses WHERE item_id = ?').bind(row.id).run();
-    await env.DB.prepare('DELETE FROM school_items WHERE id = ? AND author_id = ?').bind(row.id,user.id).run();
-    return schoolJson({ok:true});
-  }
-  return schoolJson({error:'Rota não encontrada.'},404);
+  const match=path.match(/^\/api\/school\/items\/([a-f0-9-]+)(\/response)?$/);if(!match)return schoolJson({error:'Rota não encontrada.'},404);const row=await env.DB.prepare('SELECT * FROM school_items WHERE id=? AND institution_id=? AND class_id=?').bind(match[1],c.institution.id,c.selectedClass.id).first();if(!row)return schoolJson({error:'Registro não encontrado nesta turma.'},404);const item={...row,payload:JSON.parse(row.payload||'{}')};if(!schoolVisible(item,user,c))return schoolJson({error:'Acesso negado.'},403);
+  if(match[2]&&request.method==='POST'){const v=await schoolBody(request),allowed=item.kind==='task'&&user.role==='student'?['done','pending']:['goal','reminder'].includes(item.kind)&&item.author_id===user.id?['done','pending']:item.kind==='authorization'&&user.role==='parent'?['approved','denied']:item.kind==='event'&&user.role==='parent'?['confirmed','pending']:['notice','report'].includes(item.kind)&&user.role!=='teacher'?['read']:[];if(!allowed.includes(v.status))return schoolJson({error:'Esta ação não está disponível para seu perfil.'},403);await env.DB.prepare('INSERT INTO school_responses(item_id,account_id,status,updated_at) VALUES(?,?,?,?) ON CONFLICT(item_id,account_id) DO UPDATE SET status=excluded.status,updated_at=excluded.updated_at').bind(item.id,user.id,v.status,now).run();return schoolJson({ok:true});}
+  if(!match[2]&&request.method==='DELETE'){if(item.author_id!==user.id)return schoolJson({error:'Você só pode remover seus próprios registros.'},403);await env.DB.batch([env.DB.prepare('DELETE FROM school_responses WHERE item_id=?').bind(item.id),env.DB.prepare('DELETE FROM school_items WHERE id=? AND author_id=?').bind(item.id,user.id)]);return schoolJson({ok:true});}
+  if(!match[2]&&request.method==='PATCH'){
+    if(user.role!=='teacher'||item.author_id!==user.id||!['grade','event'].includes(item.kind))return schoolJson({error:'Você só pode editar notas e encontros publicados por você.'},403);const v=await schoolBody(request),title=v.title===undefined?row.title:schoolClean(v.title,180),body=v.body===undefined?row.body:schoolClean(v.body,5000),due=schoolClean(v.dueAt,40),studentId=v.studentId===undefined?row.student_id:v.studentId||null;let payload=item.payload;if(!title||item.kind==='event'&&!body)return schoolJson({error:'Preencha o título e a descrição.'},400);if(studentId&&!c.students.some(a=>a.id===studentId))return schoolJson({error:'Selecione um aluno desta turma.'},403);
+    if(item.kind==='grade'){payload=gradePayload(v);if(!payload||!studentId)return schoolJson({error:'Confira os campos da avaliação.'},400);if(due&&!/^\d{4}-\d{2}-\d{2}$/.test(due))return schoolJson({error:'Data inválida.'},400);}else{if(!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(due))return schoolJson({error:'Informe a data do encontro.'},400);if(v.endAt!==undefined){const end=schoolClean(v.endAt,40);if(end&&(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(end)||end<=due))return schoolJson({error:'O término precisa ser depois do início.'},400);if(end)payload.endAt=end;else delete payload.endAt;}else if(payload.endAt&&row.due_at){const f=value=>Date.parse(value+(value.includes('T')?'Z':'T00:00:00Z'));payload.endAt=new Date(f(due)+f(payload.endAt)-f(row.due_at)).toISOString().slice(0,16);}if(v.format!==undefined)payload.format=schoolClean(v.format,60)||'Presencial';}
+    await env.DB.prepare('UPDATE school_items SET title=?,body=?,due_at=?,payload=?,student_id=?,updated_at=? WHERE id=? AND author_id=?').bind(title,body,due||null,JSON.stringify(payload),studentId,now,row.id,user.id).run();return schoolJson({ok:true});
+  }return schoolJson({error:'Método não permitido.'},405);
 }

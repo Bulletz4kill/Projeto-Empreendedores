@@ -1,6 +1,7 @@
 import assets from './assets.mjs';
 import '../dist/examples.js';
 import {schoolApi,seedSchoolExamples} from './school.mjs';
+import {institutionApi} from './institutions.mjs';
 const encoder=new TextEncoder(), limits=new Map();
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store',...headers}});
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');
@@ -25,7 +26,7 @@ async function sessionId(request,name,env){
   return await crypto.subtle.verify('HMAC',await key(env.AUTH_SECRET),unhex(parts[3]),encoder.encode(parts.slice(0,3).join('.')))?parts[1]:null;
 }
 async function isAdmin(request,env){return await sessionId(request,'planner_admin',env)==='admin';}
-async function accountSession(request,env){const id=await sessionId(request,'planner_account',env);if(!id||!env.DB)return null;return env.DB.prepare("SELECT id, name, login, role, status, created_by FROM accounts WHERE id = ? AND status = 'active'").bind(id).first();}
+async function accountSession(request,env){const id=await sessionId(request,'planner_account',env);if(!id||!env.DB)return null;return env.DB.prepare("SELECT a.id,a.name,a.login,CASE WHEN a.account_kind='institution' THEN 'institution' ELSE a.role END AS role,a.status,a.created_by,a.institution_id FROM accounts a JOIN institutions i ON i.id=a.institution_id WHERE a.id=? AND a.status='active' AND i.status='active'").bind(id).first();}
 async function passwordHash(password,salt){const material=await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);return hex(await crypto.subtle.deriveBits({name:'PBKDF2',salt:unhex(salt),iterations:100000,hash:'SHA-256'},material,256));}
 async function validPassword(password,account){const derived=await passwordHash(password,account.salt);const k=await key(account.salt);const signature=await crypto.subtle.sign('HMAC',k,encoder.encode(account.password_hash));return crypto.subtle.verify('HMAC',k,signature,encoder.encode(derived));}
 function throttle(request,action,max=8){const now=Date.now(),ip=request.headers.get('CF-Connecting-IP')||'local',id=action+':'+ip;for(const [k,v]of limits)if(v.until<now)limits.delete(k);const item=limits.get(id)||{count:0,until:now+300000};item.count++;limits.set(id,item);return item.count>max;}
@@ -33,10 +34,11 @@ function clearThrottle(request,action){limits.delete(action+':'+(request.headers
 async function readBody(request){const text=await request.text();if(text.length>4096)throw new Error('invalid_body');try{const value=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value))throw new Error();return value;}catch{throw new Error('invalid_body');}}
 function cleanLogin(value){return typeof value==='string'?value.trim().toLowerCase():'';}
 function validFields(data){return typeof data.name==='string'&&data.name.trim().length>=2&&data.name.trim().length<=120&&/^[a-z0-9][a-z0-9@._+\-]{2,119}$/.test(cleanLogin(data.login))&&typeof data.password==='string'&&data.password.length>=8&&data.password.length<=128;}
-async function createAccount(data,role,status,createdBy,env){
+async function createAccount(data,role,status,createdBy,env,institutionId=null){
+  if(!validFields(data))return null;
   const salt=hex(crypto.getRandomValues(new Uint8Array(16))),id=crypto.randomUUID(),now=new Date().toISOString();
   const hash=await passwordHash(data.password,salt);
-  const result=await env.DB.prepare('INSERT INTO accounts (id, name, login, password_hash, salt, role, status, created_by, created_at, approved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(login) DO NOTHING').bind(id,data.name.trim(),cleanLogin(data.login),hash,salt,role,status,createdBy,now,status==='active'?now:null).run();
+  const result=await env.DB.prepare("INSERT INTO accounts (id,name,login,password_hash,salt,role,status,created_by,created_at,approved_at,institution_id,account_kind) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE ?!='student' OR (SELECT count(*) FROM accounts WHERE institution_id=? AND role='student')<(SELECT student_limit FROM institutions WHERE id=?) ON CONFLICT(login) DO NOTHING").bind(id,data.name.trim(),cleanLogin(data.login),hash,salt,role==='institution'?'teacher':role,status,createdBy,now,status==='active'?now:null,institutionId,role==='institution'?'institution':'person',role,institutionId,institutionId).run();
   if(!result.meta.changes)return null;
   return {id,name:data.name.trim(),login:cleanLogin(data.login),role,status};
 }
@@ -44,6 +46,9 @@ const publicFields='id, name, login, role, status, created_at, approved_at';
 async function api(request,env,url){
   const path=url.pathname;
   if(request.method!=='GET'&&request.headers.get('Origin')!==url.origin)return json({error:'Origem inválida.'},403);
+  if(path==='/api/planner')return json({error:'Use o portal da sua turma.'},410);
+  if(path==='/api/admin/migrate-legacy'||path.startsWith('/api/institution'))return institutionApi(request,env,url,await accountSession(request,env),await isAdmin(request,env),createAccount);
+  if(path==='/api/register-teacher'||path==='/api/accounts'||path==='/api/teachers'||path.startsWith('/api/teachers/'))return json({error:'As contas agora são criadas pela instituição. Entre no acesso da escola.'},403);
   if(path==='/api/examples'&&request.method==='POST'){
     if(!await isAdmin(request,env))return json({error:'Acesso restrito ao administrador.'},403);
     const teachers=(await env.DB.prepare("SELECT id FROM accounts WHERE role = 'teacher' AND status = 'active'").all()).results;
@@ -94,10 +99,12 @@ async function api(request,env,url){
     const account=await env.DB.prepare('SELECT * FROM accounts WHERE login = ?').bind(login).first();
     if(!account){await passwordHash(data.password,'00000000000000000000000000000000');return json({error:'Usuário ou senha incorretos.'},401);}
     if(!await validPassword(data.password,account))return json({error:'Usuário ou senha incorretos.'},401);
-    if(account.status!=='active')return json({error:'Seu cadastro aguarda aprovação do administrador.'},403);
+    if(account.status!=='active')return json({error:'Seu cadastro aguarda autorização.'},403);
+    const institution=await env.DB.prepare('SELECT status FROM institutions WHERE id=?').bind(account.institution_id).first();
+    if(!institution||institution.status!=='active')return json({error:'O acesso da escola aguarda liberação ou está suspenso. Contate a instituição.'},403);
     await env.DB.prepare('UPDATE accounts SET last_seen_at = ? WHERE id = ?').bind(new Date().toISOString(),account.id).run();
     clearThrottle(request,action);
-    return loginResponse({id:account.id,name:account.name,role:account.role},'planner_account',account.id,env);
+    return loginResponse({id:account.id,name:account.name,role:account.account_kind==='institution'?'institution':account.role,institution_id:account.institution_id},'planner_account',account.id,env);
   }
   if(path==='/api/teachers'&&request.method==='GET'){
     if(!await isAdmin(request,env))return json({error:'Acesso restrito ao administrador.'},403);
@@ -144,6 +151,7 @@ export default {
     }
     if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Método não permitido',{status:405});
     let pathname=url.pathname;
+    if(pathname==='/planner.html')return new Response('Use o portal escolar.',{status:404});
     if(pathname==='/admin/planner.html'){
       if(!await isAdmin(request,env))return new Response('Faça login como administrador.',{status:401});
       pathname='/planner.html';

@@ -1,4 +1,5 @@
 const profiles={
+  escola:{title:'Acesso da instituição',greeting:'Gestão da escola',description:'Organize turmas e crie os acessos da comunidade escolar.',demo:'Conhecer o portal'},
   prof:{title:'Espaço da professora',greeting:'Boas-vindas, professora!',description:'Acompanhe sua turma e aproxime as famílias.',demo:'Conhecer o espaço da professora'},
   pais:{title:'Espaço dos pais',greeting:'Boas-vindas, família!',description:'Participe de cada etapa da aprendizagem.',demo:'Conhecer o espaço dos pais'},
   alunos:{title:'Espaço dos alunos',greeting:'Seu próximo passo começa aqui!',description:'Organize seus estudos e celebre suas conquistas.',demo:'Conhecer o espaço dos alunos'}
@@ -12,7 +13,7 @@ async function api(path,options={}){
 function loginView(){
   $('#credentials').hidden=false;$('#teacher-registration').hidden=true;
   $('#teacher-registration').reset();$('#registration-status').textContent='';
-  $('.create-access').hidden=selected!=='prof'||adminMode;$('.demo').hidden=adminMode;
+  $('.create-access').hidden=true;$('.demo').hidden=adminMode||selected==='escola';
   $('#form-title').textContent=adminMode?'Acesso do administrador':profiles[selected].greeting;
   $('#form-description').textContent=adminMode?'Entre para administrar o portal escolar.':profiles[selected].description;
 }
@@ -20,7 +21,7 @@ function selectProfile(role){
   if(busy)return;
   selected=role;adminMode=false;
   tabs.forEach(tab=>{const active=tab.dataset.role===role;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;});
-  $('#access-form').setAttribute('aria-labelledby','tab-'+role);
+  $('#access-form').setAttribute('aria-labelledby',role==='escola'?'school-access':'tab-'+role);
   $('label[for="email"]').textContent='E-mail ou usuário';$('#email').placeholder='Seu e-mail ou usuário';
   $('#credentials').reset();$('#password').type='password';$('#toggle-password').textContent='Mostrar';
   $('#toggle-password').setAttribute('aria-label','Mostrar senha');$('#toggle-password').setAttribute('aria-pressed','false');
@@ -59,15 +60,16 @@ function workspace(user){
   currentUser=user;$('#login').hidden=true;$('#workspace').hidden=false;
   const isAdmin=user.role==='admin',isTeacher=user.role==='teacher';
   $('#workspace-title').textContent=isAdmin?'Administração · Portal escolar':user.name+' · '+({teacher:'Professor',parent:'Responsável',student:'Aluno'}[user.role]||'Demonstração');
-  $('#account-management').hidden=!isAdmin;$('#create-account').hidden=!isTeacher;
+  $('#account-management').hidden=true;$('#create-account').hidden=true;
   $('#management-title').textContent=isAdmin?'Acessos de professores':'Acessos da turma';
   $('#management-description').textContent=isAdmin?'Aprove os professores para que eles possam criar acessos de alunos e pais.':'Crie os acessos de alunos e responsáveis. Apenas os cadastros criados por você aparecem aqui.';
   $('#account-list').replaceChildren();$('#management-status').textContent='';
   window.ConectaSchool.close();
+  window.ConectaOrg.close();
   $('#logout').focus();window.scrollTo(0,0);
 }
 async function loadPlanner(){
-  await window.ConectaSchool.open(currentUser);
+  if(['admin','institution'].includes(currentUser.role))await window.ConectaOrg.open(currentUser);else await window.ConectaSchool.open(currentUser);
 }
 async function loadAccounts(){
   if(!currentUser||!['admin','teacher'].includes(currentUser.role))return;
@@ -92,11 +94,10 @@ $('#credentials').addEventListener('submit',async event=>{
   busy=true;button.disabled=true;status.textContent='Verificando acesso…';
   try{
     const result=await api(adminMode?'/api/login':'/api/account-login',{method:'POST',body:JSON.stringify({username:$('#email').value,password:$('#password').value,profile:selected})});
-    const actualProfile={teacher:'prof',parent:'pais',student:'alunos'}[result.user.role];
+    const actualProfile={teacher:'prof',parent:'pais',student:'alunos',institution:'escola'}[result.user.role];
     if(actualProfile)selected=actualProfile;
     event.target.reset();workspace(result.user);
-    if(result.user.role==='admin')await loadAccounts();
-    else{await loadPlanner();if(result.user.role==='teacher')await loadAccounts();}
+    await loadPlanner();
   }catch(error){
     status.textContent=error.message;
     $('#password').type='password';$('#toggle-password').textContent='Mostrar';
@@ -124,13 +125,14 @@ $('#logout').addEventListener('click',async()=>{
   const button=$('#logout');button.disabled=true;
   try{
     if(currentUser&&currentUser.role!=='demo')await api('/api/logout',{method:'POST',body:'{}'});
-    currentUser=null;window.ConectaSchool.close();$('#workspace').hidden=true;$('#create-account').reset();$('#login').hidden=false;selectProfile(selected);$('#tab-'+selected).focus();
+    currentUser=null;window.ConectaSchool.close();window.ConectaOrg.close();$('#workspace').hidden=true;$('#create-account').reset();$('#login').hidden=false;selectProfile(selected);$(selected==='escola'?'#school-access':'#tab-'+selected).focus();
   }catch(error){$('#workspace-title').textContent=error.message;}
   finally{button.disabled=false;}
 });
 selectProfile('prof');
+$('#school-access').addEventListener('click',()=>{selectProfile('escola');$('#email').focus();});
 api('/api/me').then(async result=>{
   if(busy||$('#email').value||$('#password').value)return;
-  selected={teacher:'prof',parent:'pais',student:'alunos'}[result.user.role]||'prof';
-  workspace(result.user);if(result.user.role==='admin')await loadAccounts();else{await loadPlanner();if(result.user.role==='teacher')await loadAccounts();}
+  selected={teacher:'prof',parent:'pais',student:'alunos',institution:'escola'}[result.user.role]||'prof';
+  workspace(result.user);await loadPlanner();
 }).catch(()=>{});
