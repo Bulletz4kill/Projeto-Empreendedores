@@ -4,6 +4,7 @@ const files=['.gitignore','.github/workflows/check.yml','site-planner/.gitignore
 files.push('site-planner/check-school.mjs','site-planner/worker/school.mjs','site-planner/drizzle/0001_school.sql','site-planner/dist/school.js','site-planner/dist/school.css','site-planner/dist/brand-icon.svg','site-planner/dist/brand-logo.svg');
 files.push('site-planner/dist/calendar.js','site-planner/create-favicon.cjs','site-planner/dist/favicon.ico','site-planner/dist/favicon-32.png','site-planner/dist/apple-touch-icon.png');
 files.push('site-planner/dist/grade-chart.js','site-planner/dist/examples.js','site-planner/check-chart.mjs');
+files.push('site-planner/dist/portal.css');
 for(const file of files){const destination=path.join(target,file);fs.mkdirSync(path.dirname(destination),{recursive:true});fs.copyFileSync(path.join(root,file),destination);}
 const prepare=path.join(target,'site-planner/prepare.cjs');
 fs.writeFileSync(prepare,fs.readFileSync(prepare,'utf8').replace("let html = fs.readFileSync(path.join(root, source), 'utf8');","if(!source){console.log('Public export: using the empty planner, without school data.');process.exit(0);}\nlet html = fs.readFileSync(path.join(root, source), 'utf8');"));
