@@ -14,6 +14,7 @@ function loginView(){
   $('#credentials').hidden=false;$('#teacher-registration').hidden=true;
   $('#teacher-registration').reset();$('#registration-status').textContent='';
   $('.create-access').hidden=true;$('.demo').hidden=adminMode||selected==='escola';
+  $('#no-plan-cta').hidden=adminMode||selected!=='escola';
   $('#form-title').textContent=adminMode?'Acesso do administrador':profiles[selected].greeting;
   $('#form-description').textContent=adminMode?'Entre para administrar o portal escolar.':profiles[selected].description;
 }
@@ -131,6 +132,7 @@ $('#logout').addEventListener('click',async()=>{
 });
 selectProfile('prof');
 $('#school-access').addEventListener('click',()=>{selectProfile('escola');$('#email').focus();});
+$('#show-plans').addEventListener('click',()=>window.ConectaPlans.open(result=>{selectProfile('escola');$('#email').value=result.login;$('#form-status').textContent=result.message;$('#password').focus();}));
 api('/api/me').then(async result=>{
   if(busy||$('#email').value||$('#password').value)return;
   selected={teacher:'prof',parent:'pais',student:'alunos',institution:'escola'}[result.user.role]||'prof';

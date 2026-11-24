@@ -29,6 +29,14 @@ async function institutionSnapshot(env,id){
 function validOrg(data){return orgClean(data.name).length>=2&&['monthly','annual'].includes(data.billingCycle)&&['upfront','installments'].includes(data.paymentOption||'upfront')&&Number.isInteger(Number(data.studentLimit))&&Number(data.studentLimit)>=1&&Number(data.studentLimit)<=100000&&['pending','active','suspended'].includes(data.status)&&Number.isFinite(Number(data.passGrade??6))&&Number(data.passGrade??6)>=0&&Number(data.passGrade??6)<=10&&Number.isFinite(Number(data.attendanceMin??75))&&Number(data.attendanceMin??75)>=0&&Number(data.attendanceMin??75)<=100;}
 export async function institutionApi(request,env,url,user,admin,createAccount){
   const path=url.pathname,now=new Date().toISOString();
+  if(path==='/api/institution-request'&&request.method==='POST'){
+    const data=await orgBody(request),school={...data,name:data.schoolName,status:'pending'};
+    if(!validOrg(school)||orgClean(data.name).length<2||typeof data.login!=='string'||!/^[a-z0-9][a-z0-9@._+\-]{2,119}$/.test(data.login.trim().toLowerCase())||typeof data.password!=='string'||data.password.length<8||data.password.length>128)return orgJson({error:'Confira o nome da escola, plano, nome do gestor, usuário e senha com pelo menos 8 caracteres.'},400);
+    const existing=await env.DB.prepare('SELECT id FROM accounts WHERE login=?').bind(data.login.trim().toLowerCase()).first();if(existing)return orgJson({error:'Este usuário já está em uso. Se já tem cadastro, entre no acesso da escola.'},409);
+    const id=crypto.randomUUID();await env.DB.prepare('INSERT INTO institutions(id,name,status,billing_cycle,student_limit,amount_cents,payment_option,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,orgClean(data.schoolName),'pending',data.billingCycle,Number(data.studentLimit),planPrice(data.studentLimit,data.paymentOption),data.paymentOption||'upfront',now,now).run();
+    const account=await createAccount(data,'institution','active',null,env,id);if(!account){await env.DB.prepare('DELETE FROM institutions WHERE id=?').bind(id).run();return orgJson({error:'Não foi possível criar o usuário da escola. Escolha outro usuário.'},409);}
+    return orgJson({message:'Solicitação recebida! Entre com o usuário e a senha que acabou de criar para acompanhar a liberação pelo ADM. Nenhum pagamento foi realizado.',login:account.login,status:'pending'},201);
+  }
   if(path==='/api/admin/migrate-legacy'&&request.method==='POST'){if(!admin)return orgJson({error:'Acesso restrito ao ADM.'},403);return orgJson(await migrateLegacy(env));}
   if(path==='/api/institutions'&&request.method==='GET'){
     if(!admin)return orgJson({error:'Acesso restrito ao ADM.'},403);
@@ -53,6 +61,16 @@ export async function institutionApi(request,env,url,user,admin,createAccount){
   if(!path.startsWith('/api/institution'))return orgJson({error:'Rota não encontrada.'},404);
   if(user?.role!=='institution')return orgJson({error:'Apenas a instituição gerencia turmas e contas.'},403);
   const schoolId=user.institution_id;
+  const institution=await env.DB.prepare('SELECT * FROM institutions WHERE id=?').bind(schoolId).first();if(!institution)return orgJson({error:'Escola não encontrada.'},404);
+  if(institution.status!=='active'){
+    if(path==='/api/institution'&&request.method==='GET')return orgJson({institution,accounts:[],classes:[],members:[],links:[]});
+    if(path==='/api/institution/plan-request'&&request.method==='POST'){
+      const data=await orgBody(request),values={...data,name:institution.name,status:'pending'};if(!validOrg(values))return orgJson({error:'Confira a quantidade de alunos, ciclo e condição do plano.'},400);
+      const count=await env.DB.prepare("SELECT count(*) AS total FROM accounts WHERE institution_id=? AND role='student'").bind(schoolId).first();if(Number(data.studentLimit)<count.total)return orgJson({error:'A capacidade não pode ser menor que os alunos já cadastrados.'},409);
+      await env.DB.prepare("UPDATE institutions SET status='pending',billing_cycle=?,student_limit=?,payment_option=?,amount_cents=?,updated_at=? WHERE id=?").bind(data.billingCycle,Number(data.studentLimit),data.paymentOption||'upfront',planPrice(data.studentLimit,data.paymentOption),now,schoolId).run();return orgJson({message:'Solicitação enviada ao ADM. Aguarde a liberação; nenhum pagamento foi realizado.'},201);
+    }
+    return orgJson({error:'O plano ainda não está ativo. Aguarde a autorização do ADM para gerenciar turmas e contas.'},403);
+  }
   if(path==='/api/institution'&&request.method==='GET')return orgJson(await institutionSnapshot(env,schoolId));
   if(path==='/api/institution/classes'&&request.method==='POST'){
     const data=await orgBody(request),year=Number(data.academicYear);if(orgClean(data.name).length<1||!Number.isInteger(year)||year<2000||year>2100)return orgJson({error:'Informe o nome da turma e um ano letivo válido.'},400);

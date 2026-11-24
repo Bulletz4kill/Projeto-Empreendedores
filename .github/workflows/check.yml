@@ -19,3 +19,4 @@ jobs:
       - run: node site-planner/check-chart.mjs
       - run: node site-planner/check-report.mjs
       - run: node site-planner/check-migration.mjs
+      - run: node site-planner/check-contract.mjs

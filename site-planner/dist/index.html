@@ -34,6 +34,7 @@
 <button class="primary" type="submit">Entrar <span aria-hidden="true">→</span></button>
 <p id="form-status" role="status" aria-live="polite"></p>
 </form>
+<div id="no-plan-cta" class="no-plan-cta" hidden><span>AINDA NÃO É UMA ESCOLA CONECTA+?</span><h3>Ainda não tem plano?</h3><p>Conheça os planos, cadastre sua escola e solicite a contratação.</p><button id="show-plans" type="button">Conhecer planos e contratar</button><small>Sem pagamento nesta demonstração. Liberação pelo ADM.</small></div>
 <p class="create-access" hidden><button id="create-teacher" type="button">Criar acesso de professor</button></p>
 <form id="teacher-registration" hidden>
 <label for="teacher-name">Nome completo</label><input id="teacher-name" name="name" autocomplete="name" maxlength="120" required>
@@ -64,11 +65,13 @@
 </section>
 <main id="school-app" hidden aria-label="Portal escolar"></main><section id="org-app" hidden aria-label="Gestão da instituição"></section></section>
 <footer>Conecta+ <span>Conexões que ajudam a crescer.</span></footer>
+<dialog id="plan-dialog" class="plan-dialog" aria-label="Planos e solicitação de contratação"></dialog>
 <script src="calendar.js"></script>
 <script src="grade-chart.js"></script>
 <script src="report-card.js"></script>
 <script src="examples.js"></script>
 <script src="school.js"></script>
 <script src="institutions.js"></script>
+<script src="plan-enrollment.js"></script>
 <script src="app.js"></script>
 </body></html>

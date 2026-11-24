@@ -46,3 +46,7 @@ Use o binding D1 DB e aplique todas as migrações da pasta drizzle em ordem. Co
 A migração 0002 adiciona somente o esquema. Após publicá-la, o ADM pode executar POST /api/admin/migrate-legacy com sessão autenticada para preservar e associar os cadastros antigos a uma escola e turma existentes. A operação é idempotente e mantém senhas, notas, registros e vínculos familiares. O ADM cria em seguida o acesso do gestor para cada escola migrada. Migrações e exemplos não criam credenciais de produção automaticamente.
 
 As senhas usam PBKDF2 com salt individual; sessões usam cookies assinados HttpOnly/Secure/SameSite. A escola precisa estar autorizada para suas contas entrarem. Os testes verificam isolamento entre escolas e turmas, permissões de criação/edição, privacidade de mensagens, capacidade contratada, preços, suspensão, boletim e preservação na migração.
+
+## Solicitação de contratação
+
+Em Acesso da escola, a opção Ainda não tem plano abre os planos e o formulário de solicitação. POST /api/institution-request cria uma escola pendente e um gestor com senha protegida. O gestor pode entrar somente para acompanhar ou ajustar o pedido; turmas e contas ficam bloqueadas até autorização do ADM. Escolas suspensas também ficam restritas a essa tela, enquanto professores, alunos e responsáveis permanecem sem acesso ao portal. A solicitação é uma demonstração sem pagamento. Execute `node site-planner/check-contract.mjs` para testar o fluxo, preços, bloqueio, duplicidades e limite de solicitações.

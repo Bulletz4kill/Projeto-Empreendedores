@@ -26,7 +26,7 @@ async function sessionId(request,name,env){
   return await crypto.subtle.verify('HMAC',await key(env.AUTH_SECRET),unhex(parts[3]),encoder.encode(parts.slice(0,3).join('.')))?parts[1]:null;
 }
 async function isAdmin(request,env){return await sessionId(request,'planner_admin',env)==='admin';}
-async function accountSession(request,env){const id=await sessionId(request,'planner_account',env);if(!id||!env.DB)return null;return env.DB.prepare("SELECT a.id,a.name,a.login,CASE WHEN a.account_kind='institution' THEN 'institution' ELSE a.role END AS role,a.status,a.created_by,a.institution_id FROM accounts a JOIN institutions i ON i.id=a.institution_id WHERE a.id=? AND a.status='active' AND i.status='active'").bind(id).first();}
+async function accountSession(request,env){const id=await sessionId(request,'planner_account',env);if(!id||!env.DB)return null;return env.DB.prepare("SELECT a.id,a.name,a.login,CASE WHEN a.account_kind='institution' THEN 'institution' ELSE a.role END AS role,a.status,a.created_by,a.institution_id FROM accounts a JOIN institutions i ON i.id=a.institution_id WHERE a.id=? AND a.status='active' AND (i.status='active' OR a.account_kind='institution')").bind(id).first();}
 async function passwordHash(password,salt){const material=await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);return hex(await crypto.subtle.deriveBits({name:'PBKDF2',salt:unhex(salt),iterations:100000,hash:'SHA-256'},material,256));}
 async function validPassword(password,account){const derived=await passwordHash(password,account.salt);const k=await key(account.salt);const signature=await crypto.subtle.sign('HMAC',k,encoder.encode(account.password_hash));return crypto.subtle.verify('HMAC',k,signature,encoder.encode(derived));}
 function throttle(request,action,max=8){const now=Date.now(),ip=request.headers.get('CF-Connecting-IP')||'local',id=action+':'+ip;for(const [k,v]of limits)if(v.until<now)limits.delete(k);const item=limits.get(id)||{count:0,until:now+300000};item.count++;limits.set(id,item);return item.count>max;}
@@ -47,6 +47,7 @@ async function api(request,env,url){
   const path=url.pathname;
   if(request.method!=='GET'&&request.headers.get('Origin')!==url.origin)return json({error:'Origem inválida.'},403);
   if(path==='/api/planner')return json({error:'Use o portal da sua turma.'},410);
+  if(path==='/api/institution-request'&&request.method==='POST'&&throttle(request,'institution-request',5))return json({error:'Muitas solicitações. Aguarde cinco minutos.'},429);
   if(path==='/api/admin/migrate-legacy'||path.startsWith('/api/institution'))return institutionApi(request,env,url,await accountSession(request,env),await isAdmin(request,env),createAccount);
   if(path==='/api/register-teacher'||path==='/api/accounts'||path==='/api/teachers'||path.startsWith('/api/teachers/'))return json({error:'As contas agora são criadas pela instituição. Entre no acesso da escola.'},403);
   if(path==='/api/examples'&&request.method==='POST'){
@@ -101,7 +102,7 @@ async function api(request,env,url){
     if(!await validPassword(data.password,account))return json({error:'Usuário ou senha incorretos.'},401);
     if(account.status!=='active')return json({error:'Seu cadastro aguarda autorização.'},403);
     const institution=await env.DB.prepare('SELECT status FROM institutions WHERE id=?').bind(account.institution_id).first();
-    if(!institution||institution.status!=='active')return json({error:'O acesso da escola aguarda liberação ou está suspenso. Contate a instituição.'},403);
+    if(!institution||institution.status!=='active'&&account.account_kind!=='institution')return json({error:'O acesso da escola aguarda liberação ou está suspenso. Contate a instituição.'},403);
     await env.DB.prepare('UPDATE accounts SET last_seen_at = ? WHERE id = ?').bind(new Date().toISOString(),account.id).run();
     clearThrottle(request,action);
     return loginResponse({id:account.id,name:account.name,role:account.account_kind==='institution'?'institution':account.role,institution_id:account.institution_id},'planner_account',account.id,env);

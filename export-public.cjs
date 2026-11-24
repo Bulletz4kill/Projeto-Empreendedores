@@ -6,6 +6,7 @@ files.push('site-planner/dist/calendar.js','site-planner/create-favicon.cjs','si
 files.push('site-planner/dist/grade-chart.js','site-planner/dist/examples.js','site-planner/check-chart.mjs');
 files.push('site-planner/dist/portal.css');
 files.push('site-planner/worker/institutions.mjs','site-planner/drizzle/0002_institutions.sql','site-planner/dist/institutions.js','site-planner/dist/institutions.css','site-planner/dist/report-card.js','site-planner/dist/report-card.css','site-planner/check-migration.mjs','site-planner/check-report.mjs');
+files.push('site-planner/dist/plan-enrollment.js','site-planner/check-contract.mjs');
 for(const file of files){const destination=path.join(target,file);fs.mkdirSync(path.dirname(destination),{recursive:true});fs.copyFileSync(path.join(root,file),destination);}
 const prepare=path.join(target,'site-planner/prepare.cjs');
 fs.writeFileSync(prepare,fs.readFileSync(prepare,'utf8').replace("let html = fs.readFileSync(path.join(root, source), 'utf8');","if(!source){console.log('Public export: using the empty planner, without school data.');process.exit(0);}\nlet html = fs.readFileSync(path.join(root, source), 'utf8');"));
@@ -65,4 +66,5 @@ A migração 0002 adiciona somente o esquema. Após publicá-la, o ADM pode exec
 
 As senhas usam PBKDF2 com salt individual; sessões usam cookies assinados HttpOnly/Secure/SameSite. A escola precisa estar autorizada para suas contas entrarem. Os testes verificam isolamento entre escolas e turmas, permissões de criação/edição, privacidade de mensagens, capacidade contratada, preços, suspensão, boletim e preservação na migração.
 `);
+fs.appendFileSync(readmePath,'\n## Solicitação de contratação\n\nEm Acesso da escola, a opção Ainda não tem plano abre os planos e o formulário de solicitação. POST /api/institution-request cria uma escola pendente e um gestor com senha protegida. O gestor pode entrar somente para acompanhar ou ajustar o pedido; turmas e contas ficam bloqueadas até autorização do ADM. Escolas suspensas também ficam restritas a essa tela, enquanto professores, alunos e responsáveis permanecem sem acesso ao portal. A solicitação é uma demonstração sem pagamento. Execute `node site-planner/check-contract.mjs` para testar o fluxo, preços, bloqueio, duplicidades e limite de solicitações.\n');
 console.log('Public export prepared: '+files.length+' source files, README, and empty planner.');
